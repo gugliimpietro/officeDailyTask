@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
+    "@supabase/supabase-js": "^2.89.0",
     "docxtemplater": "^3.67.6",
     "file-saver": "^2.0.5",
     "lucide-react": "^0.292.0",
