@@ -10,19 +10,26 @@ class LetterGenerator {
   async init() {
     this.initializeUI();
 
-    // Facilitators data source (fallback to local mock data from data.js)
-    this.facilitators =
+    // Facilitators
+    // - Supabase is the primary source
+    // - data.js is fallback ONLY if Supabase fails/unavailable
+    this.fallbackFacilitators =
       typeof facilitators !== "undefined" && Array.isArray(facilitators)
         ? facilitators.slice()
         : [];
+    this.facilitators = [];
     this.setupEventListeners();
     this.loadFormState();
     this.initializeCharts();
     this.startParticleAnimation();
     this.populateTimeSlots();
-    // Populate facilitator dropdowns (temporary/fallback), then refresh from Supabase
+
+    // Populate facilitator dropdowns (Supabase-first, fallback only on failure)
     this.populateFacilitators({ loading: true });
-    await this.refreshFacilitatorsFromSupabase();
+    const loadedFromSupabase = await this.refreshFacilitatorsFromSupabase();
+    if (!loadedFromSupabase) {
+      this.facilitators = this.fallbackFacilitators.slice();
+    }
     this.populateFacilitators();
     this.populateBTSPrograms();
     this.applyVisibilityRules();
@@ -72,10 +79,18 @@ class LetterGenerator {
     // Checkbox listeners
     document
       .getElementById("lingkupInternal")
-      .addEventListener("change", () => this.updateProgressBar());
+      .addEventListener("change", () => {
+        this.applyVisibilityRules();
+        this.updateProgressBar();
+        this.saveFormState();
+      });
     document
       .getElementById("lingkupEksternal")
-      .addEventListener("change", () => this.updateProgressBar());
+      .addEventListener("change", () => {
+        this.applyVisibilityRules();
+        this.updateProgressBar();
+        this.saveFormState();
+      });
 
     // Variant listeners
     document
@@ -178,6 +193,7 @@ class LetterGenerator {
       this.hideSection(facilitatorSection);
     }
 
+    this.applyVisibilityRules();
     this.updateProgressBar();
     this.saveFormState();
   }
@@ -349,9 +365,36 @@ class LetterGenerator {
   }
 
   // Hide section with animation
-  hideSection(element) {
+  hideSection(element, clear = true) {
     element.classList.remove("section-visible");
     element.classList.add("section-hidden");
+
+    if (clear) {
+      this.clearInputsInElement(element);
+    }
+  }
+
+  // Clear all inputs/selects/textareas inside an element
+  clearInputsInElement(element) {
+    if (!element) return;
+
+    const inputs = element.querySelectorAll("input, select, textarea");
+    inputs.forEach((input) => {
+      if (input.type === "checkbox" || input.type === "radio") {
+        input.checked = false;
+      } else {
+        input.value = "";
+      }
+
+      const err = document.getElementById(`${input.id}Error`);
+      if (err) err.classList.remove("show");
+    });
+
+    // Clear facilitator institution labels (these are <div>, not inputs)
+    [1, 2, 3].forEach((i) => {
+      const div = document.getElementById(`instansiFasilitator${i}`);
+      if (div) div.textContent = "";
+    });
   }
 
   // ===== VISIBILITY RULE HELPERS (HIDE instead of DISABLE) =====
@@ -391,7 +434,14 @@ class LetterGenerator {
   isFieldVisible(fieldId) {
     const wrapper = this.getFieldWrapper(fieldId);
     if (!wrapper) return true; // if wrapper missing, assume visible
-    return wrapper.style.display !== "none";
+
+    // Hidden via wrapper display:none
+    if (wrapper.style.display === "none") return false;
+
+    // Hidden via parent section (.section-hidden)
+    if (wrapper.closest(".section-hidden")) return false;
+
+    return true;
   }
 
   // Apply your business rules by hiding fields
@@ -399,6 +449,14 @@ class LetterGenerator {
     const jenisSurat = document.getElementById("jenisSurat")?.value || "";
     const jenisKurikulum =
       document.getElementById("jenisKurikulum")?.value || "";
+
+    const sifatSurat = document.getElementById("sifatSurat")?.value || "";
+
+    const lingkupInternal =
+      document.getElementById("lingkupInternal")?.checked || false;
+    const lingkupEksternal =
+      document.getElementById("lingkupEksternal")?.checked || false;
+    const isInternalOnly = lingkupInternal && !lingkupEksternal;
 
     const varianPenugasan =
       document.getElementById("varianPenugasan")?.checked || false;
@@ -416,6 +474,23 @@ class LetterGenerator {
 
     this.setFieldVisible("pimpinan", !hidePimpinanInstansi, true);
     this.setFieldVisible("instansi", !hidePimpinanInstansi, true);
+
+    // Rule 4: If Lingkup = Internal only AND jenis surat is Kurikulum Silabus or BTS
+    // then hide Manajemen Fasilitator section entirely.
+    const facilitatorSection = document.getElementById("facilitatorSection");
+    const hideFacilitatorSection =
+      isInternalOnly &&
+      (jenisSurat === "Kurikulum Silabus" || jenisSurat === "Bahan Tayang Standar");
+
+    if (facilitatorSection) {
+      if (hideFacilitatorSection) {
+        this.hideSection(facilitatorSection, true);
+      } else {
+        // Keep original behavior when not forced-hidden by Rule 4
+        if (sifatSurat === "undangan") this.showSection(facilitatorSection);
+        else this.hideSection(facilitatorSection, true);
+      }
+    }
   }
 
   // ===== SUPABASE (Facilitators) =====
@@ -482,13 +557,15 @@ class LetterGenerator {
   async refreshFacilitatorsFromSupabase() {
     try {
       const client = await this.getSupabaseClient();
-      if (!client) return;
+      if (!client) return false;
+
+      const table = window.SUPABASE_FACILITATORS_TABLE || "facilitators";
 
       // IMPORTANT: change table name if yours is different
       // Expected columns: nama (text), perusahaan (text)
       const { data, error } = await client
-        .from("facilitators")
-        .select("nama, perusahaan")
+        .from(table)
+        .select("id, nama, perusahaan")
         .order("nama", { ascending: true });
 
       if (error) throw error;
@@ -501,14 +578,17 @@ class LetterGenerator {
         console.log(
           `[Supabase] Fasilitator berhasil dimuat: ${this.facilitators.length} data`
         );
+        return true;
       } else {
         console.warn(
           "[Supabase] Table facilitators kosong. Tetap pakai data lokal (data.js)."
         );
+        return false;
       }
     } catch (err) {
       console.error("[Supabase] Gagal fetch fasilitator:", err);
       // Keep fallback
+      return false;
     }
   }
 
@@ -796,43 +876,54 @@ class LetterGenerator {
   collectFormData() {
     const data = {};
 
+    // Helper: only collect values from visible fields (hidden fields must not be included)
+    const getValueIfVisible = (fieldId) => {
+      if (!this.isFieldVisible(fieldId)) return "";
+      const el = document.getElementById(fieldId);
+      return el ? el.value : "";
+    };
+    const getCheckedIfVisible = (fieldId) => {
+      if (!this.isFieldVisible(fieldId)) return false;
+      const el = document.getElementById(fieldId);
+      return el ? !!el.checked : false;
+    };
+
     // Basic fields
-    data.jenisSurat = document.getElementById("jenisSurat").value;
-    data.sifatSurat = document.getElementById("sifatSurat").value;
-    data.jenisKurikulum = document.getElementById("jenisKurikulum").value;
-    data.perihalKPK = document.getElementById("perihalKPK").value;
-    data.bulanSurat = document.getElementById("bulanSurat").value;
-    data.lampiran = document.getElementById("lampiran").value;
-    data.mitraKerjasama = document.getElementById("mitraKerjasama").value;
-    data.topikRapat = document.getElementById("topikRapat").value;
-    data.tanggalPelaksanaan =
-      document.getElementById("tanggalPelaksanaan").value;
-    data.waktuPelaksanaan = document.getElementById("waktuPelaksanaan").value;
-    data.tahapECP = document.getElementById("tahapECP").value;
+    data.jenisSurat = getValueIfVisible("jenisSurat");
+    data.sifatSurat = getValueIfVisible("sifatSurat");
+    data.jenisKurikulum = getValueIfVisible("jenisKurikulum");
+    data.perihalKPK = getValueIfVisible("perihalKPK");
+    data.bulanSurat = getValueIfVisible("bulanSurat");
+    data.lampiran = getValueIfVisible("lampiran");
+    data.mitraKerjasama = getValueIfVisible("mitraKerjasama");
+    data.topikRapat = getValueIfVisible("topikRapat");
+    data.tanggalPelaksanaan = getValueIfVisible("tanggalPelaksanaan");
+    data.waktuPelaksanaan = getValueIfVisible("waktuPelaksanaan");
+    data.tahapECP = getValueIfVisible("tahapECP");
 
     // Scope
-    data.lingkupInternal = document.getElementById("lingkupInternal").checked;
-    data.lingkupEksternal = document.getElementById("lingkupEksternal").checked;
+    data.lingkupInternal = getCheckedIfVisible("lingkupInternal");
+    data.lingkupEksternal = getCheckedIfVisible("lingkupEksternal");
 
     // BTS
-    data.jumlahBTS = document.getElementById("jumlahBTS").value;
-    data.btsPelatihan1 = document.getElementById("btsPelatihan1").value;
-    data.btsMateri1 = document.getElementById("btsMateri1").value;
-    data.btsPelatihan2 = document.getElementById("btsPelatihan2").value;
-    data.btsMateri2 = document.getElementById("btsMateri2").value;
-    data.btsPelatihan3 = document.getElementById("btsPelatihan3").value;
-    data.btsMateri3 = document.getElementById("btsMateri3").value;
+    data.jumlahBTS = getValueIfVisible("jumlahBTS");
+    data.btsPelatihan1 = getValueIfVisible("btsPelatihan1");
+    data.btsMateri1 = getValueIfVisible("btsMateri1");
+    data.btsPelatihan2 = getValueIfVisible("btsPelatihan2");
+    data.btsMateri2 = getValueIfVisible("btsMateri2");
+    data.btsPelatihan3 = getValueIfVisible("btsPelatihan3");
+    data.btsMateri3 = getValueIfVisible("btsMateri3");
 
     // Facilitators
-    data.varianIndividu = document.getElementById("varianIndividu").checked;
-    data.varianPenugasan = document.getElementById("varianPenugasan").checked;
-    data.varianKelompok = document.getElementById("varianKelompok").checked;
-    data.jumlahFasilitator = document.getElementById("jumlahFasilitator").value;
-    data.namaFasilitator1 = document.getElementById("namaFasilitator1").value;
-    data.namaFasilitator2 = document.getElementById("namaFasilitator2").value;
-    data.namaFasilitator3 = document.getElementById("namaFasilitator3").value;
-    data.pimpinan = document.getElementById("pimpinan").value;
-    data.instansi = document.getElementById("instansi").value;
+    data.varianIndividu = getCheckedIfVisible("varianIndividu");
+    data.varianPenugasan = getCheckedIfVisible("varianPenugasan");
+    data.varianKelompok = getCheckedIfVisible("varianKelompok");
+    data.jumlahFasilitator = getValueIfVisible("jumlahFasilitator");
+    data.namaFasilitator1 = getValueIfVisible("namaFasilitator1");
+    data.namaFasilitator2 = getValueIfVisible("namaFasilitator2");
+    data.namaFasilitator3 = getValueIfVisible("namaFasilitator3");
+    data.pimpinan = getValueIfVisible("pimpinan");
+    data.instansi = getValueIfVisible("instansi");
 
     // Get institution names for facilitators
     if (data.namaFasilitator1) {
