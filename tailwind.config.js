@@ -1,12 +1,12 @@
+// tailwind.config.js
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-  // This line tells Tailwind: "Look inside these files for your classes"
-  // If you don't add this, Tailwind won't work because it won't see your code!
   content: [
-    "./src/**/*.{js,jsx,ts,tsx}",
+    "./index.html",
+    "./src/**/*.{vue,js,ts,jsx,tsx}", // Adjust this path based on your project structure
   ],
   theme: {
     extend: {},
   },
   plugins: [],
-}
+};

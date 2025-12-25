@@ -7,6 +7,33 @@ class LetterGenerator {
     this.isGenerating = false;
     this.init().catch((err) => console.error("Init error:", err));
   }
+
+  // Safe wrapper: if anime.js failed to load, don't crash the app.
+  safeAnime(config) {
+    try {
+      if (window.anime) return window.this.safeAnime(config);
+      // Minimal fallback for common cases (progress bar / simple show/hide)
+      const targets = config?.targets;
+      const applyWidth = config?.width;
+      if (targets && applyWidth != null) {
+        const els =
+          typeof targets === "string"
+            ? Array.from(document.querySelectorAll(targets))
+            : targets instanceof Element
+            ? [targets]
+            : Array.isArray(targets)
+            ? targets
+            : [];
+        els.forEach((el) => {
+          try {
+            el.style.width = applyWidth;
+          } catch (_) {}
+        });
+      }
+    } catch (_) {}
+    return null;
+  }
+
   async init() {
     this.initializeUI();
 
@@ -355,7 +382,7 @@ class LetterGenerator {
     element.classList.remove("section-hidden");
     element.classList.add("section-visible");
 
-    anime({
+    this.safeAnime({
       targets: element,
       opacity: [0, 1],
       translateY: [-20, 0],
@@ -671,7 +698,7 @@ class LetterGenerator {
 
     const progressBar = document.getElementById("progressBar");
     if (progressBar) {
-      anime({
+      this.safeAnime({
         targets: progressBar,
         width: `${progress}%`,
         duration: 500,
@@ -831,46 +858,572 @@ class LetterGenerator {
   }
 
   // Handle generate button click
-  handleGenerate() {
+  async handleGenerate() {
+    console.log('[LetterGenerator] Generate clicked');
     if (this.isGenerating) return;
 
     if (!this.validateForm()) {
-      this.showNotification(
-        "Mohon lengkapi semua field yang diperlukan",
-        "error"
-      );
+      this.showNotification("Mohon lengkapi semua field yang diperlukan", "error");
       return;
     }
 
     this.isGenerating = true;
     this.showLoadingModal();
 
-    // Simulate document generation
-    setTimeout(() => {
-      this.generateDocument();
-      this.hideLoadingModal();
+    try {
+      await this.generateDocument();
       this.showSuccessModal();
+    } catch (err) {
+      console.error("Generate error:", err);
+      this.showNotification(
+        err?.message ? `Gagal membuat surat: ${err.message}` : "Gagal membuat surat",
+        "error"
+      );
+    } finally {
+      this.hideLoadingModal();
       this.isGenerating = false;
-    }, 2000);
+    }
+  }
+  // ===== LETTER TEMPLATE (Supabase Storage + DB mapping) =====
+
+  getLetterTemplatesConfig() {
+    return {
+      table: window.SUPABASE_LETTER_TEMPLATES_TABLE || "letter_templates",
+      bucketDefault: window.SUPABASE_LETTER_TEMPLATES_BUCKET || "letter-templates",
+      maxCandidates: window.SUPABASE_LETTER_TEMPLATES_MAX || 200,
+    };
   }
 
-  // Generate document
-  generateDocument() {
+  // Derive a normalized key set from form data for template matching
+  deriveTemplateKeys(formData) {
+    const internal = !!formData.lingkupInternal;
+    const eksternal = !!formData.lingkupEksternal;
+
+    const isInternalOnly = internal && !eksternal;
+    const scope = eksternal ? "Eksternal" : isInternalOnly ? "Internal only" : "Internal";
+
+    let varian = "";
+    if (formData.varianPenugasan) varian = "Penugasan";
+    else if (formData.varianKelompok) varian = "Kelompok";
+    else if (formData.varianIndividu) varian = "Individu";
+
+    const jenisSurat = formData.jenisSurat || "";
+    const jenisKurikulum =
+      jenisSurat === "Kurikulum Silabus" ? (formData.jenisKurikulum || "") : "";
+
+    return {
+      lingkup: scope,
+      varian_surat: varian,
+      jenis_surat: jenisSurat,
+      jenis_kurikulum: jenisKurikulum || null,
+    };
+  }
+
+  // Fetch active template candidates then score in JS (simple + robust)
+  async fetchTemplateCandidates(keys) {
+    const client = await this.getSupabaseClient();
+    if (!client) return [];
+
+    const { table, maxCandidates } = this.getLetterTemplatesConfig();
+
+    const { data, error } = await client
+      .from(table)
+      .select(
+        "id, code, name, description, lingkup, varian_surat, jenis_surat, jenis_kurikulum, bucket, storage_path, version, priority, is_active"
+      )
+      .eq("is_active", true)
+      .order("priority", { ascending: false })
+      .order("version", { ascending: false })
+      .limit(maxCandidates);
+
+    if (error) throw error;
+
+    // Optional pre-filter (fast reject) to reduce scoring work
+    return (data || []).filter((t) => {
+      const ok =
+        (t.lingkup == null || t.lingkup === keys.lingkup) &&
+        (t.varian_surat == null || t.varian_surat === keys.varian_surat) &&
+        (t.jenis_surat == null || t.jenis_surat === keys.jenis_surat) &&
+        (t.jenis_kurikulum == null || t.jenis_kurikulum === keys.jenis_kurikulum);
+      return ok;
+    });
+  }
+
+  // Score: prefer non-null exact matches; then priority/version
+  scoreTemplateRow(row, keys) {
+    const scoreField = (rowValue, keyValue) => {
+      if (rowValue == null || rowValue === "") return 1; // wildcard
+      if (rowValue === keyValue) return 10; // exact match
+      return -999; // reject
+    };
+
+    const s =
+      scoreField(row.lingkup, keys.lingkup) +
+      scoreField(row.varian_surat, keys.varian_surat) +
+      scoreField(row.jenis_surat, keys.jenis_surat) +
+      scoreField(row.jenis_kurikulum, keys.jenis_kurikulum);
+
+    if (s < 0) return -999;
+
+    // Add priority/version weight
+    return s * 1000 + (row.priority || 0) * 10 + (row.version || 0);
+  }
+
+  selectBestTemplate(candidates, keys) {
+    if (!Array.isArray(candidates) || candidates.length === 0) return null;
+
+    let best = null;
+    let bestScore = -Infinity;
+
+    for (const row of candidates) {
+      const score = this.scoreTemplateRow(row, keys);
+      if (score > bestScore) {
+        bestScore = score;
+        best = row;
+      }
+    }
+
+    return best;
+  }
+
+  // Ensure Docx templating libs exist (PizZip + docxtemplater + FileSaver)
+  async ensureDocxLibsLoaded() {
+    const need = (name) => !(window[name]);
+
+    // docxtemplater exports window.docxtemplater in browser build
+    const hasDocxTemplater =
+      window.docxtemplater && typeof window.docxtemplater === "function";
+
+    const tasks = [];
+
+    const loadScript = (src, attrName) =>
+      new Promise((resolve, reject) => {
+        const existing = document.querySelector(`script[data-${attrName}="true"]`);
+        if (existing) return resolve();
+
+        const s = document.createElement("script");
+        s.src = src;
+        s.async = true;
+        s.defer = true;
+        s.dataset[attrName] = "true";
+        s.onload = () => resolve();
+        s.onerror = () => reject(new Error(`Gagal memuat library: ${src}`));
+        document.head.appendChild(s);
+      });
+
+    if (!window.PizZip) {
+      tasks.push(
+        loadScript("https://cdn.jsdelivr.net/npm/pizzip@3.1.7/dist/pizzip.min.js", "pizzip")
+      );
+    }
+
+    if (!hasDocxTemplater) {
+      tasks.push(
+        loadScript(
+          "https://cdn.jsdelivr.net/npm/docxtemplater@3.50.0/build/docxtemplater.js",
+          "docxtemplater"
+        )
+      );
+    }
+
+    if (!window.saveAs) {
+      tasks.push(
+        loadScript(
+          "https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js",
+          "filesaver"
+        )
+      );
+    }
+
+    if (tasks.length > 0) await Promise.all(tasks);
+
+    const ok =
+      window.PizZip &&
+      window.docxtemplater &&
+      typeof window.docxtemplater === "function" &&
+      typeof window.saveAs === "function";
+
+    if (!ok) {
+      throw new Error(
+        "Library DOCX belum siap. Pastikan PizZip, docxtemplater, dan FileSaver bisa dimuat."
+      );
+    }
+  }
+
+  async downloadTemplateBlob({ bucket, path }) {
+    const client = await this.getSupabaseClient();
+    if (!client) throw new Error("Supabase client tidak tersedia");
+
+    // Try direct download
+    const { data, error } = await client.storage.from(bucket).download(path);
+
+    if (!error && data) return data;
+
+    // If storage is private, try signed URL as fallback
+    if (typeof client.storage.from(bucket).createSignedUrl === "function") {
+      const signed = await client.storage.from(bucket).createSignedUrl(path, 60);
+      if (signed?.data?.signedUrl) {
+        const resp = await fetch(signed.data.signedUrl);
+        if (!resp.ok) throw new Error("Gagal download template (signed url)");
+        return await resp.blob();
+      }
+    }
+
+    throw error || new Error("Gagal download template dari Storage");
+  }
+
+  async blobToArrayBuffer(blob) {
+    return await blob.arrayBuffer();
+  }
+
+  renderDocx(arrayBuffer, payload) {
+    const zip = new window.PizZip(arrayBuffer);
+
+    const doc = new window.docxtemplater(zip, {
+      paragraphLoop: true,
+      linebreaks: true,
+      // IMPORTANT: your template uses [placeholder] format
+      delimiters: { start: "[", end: "]" },
+    });
+
+    doc.render(payload);
+
+    const out = doc.getZip().generate({
+      type: "blob",
+      mimeType:
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    });
+
+    return out;
+  }
+
+  // Build a payload for docx placeholders. Keep keys stable!
+  buildDocxPayload(formData) {
+    // Map UI ids -> placeholder keys. Adjust if your template uses different names.
+    // NOTE: return empty string for missing values to avoid docxtemplater errors.
+    const safe = (v) => (v == null ? "" : String(v));
+
+    // Derive some convenience values
+    const tanggal = safe(formData.tanggalPelaksanaan);
+    const waktu = safe(formData.waktuPelaksanaan);
+
+    return {
+      // Common
+      jenis_surat: safe(formData.jenisSurat),
+      sifat_surat: safe(formData.sifatSurat),
+      bulan_surat: safe(formData.bulanSurat),
+      lampiran: safe(formData.lampiran),
+      mitra_kerjasama: safe(formData.mitraKerjasama),
+      topik_rapat: safe(formData.topikRapat),
+      tanggal_pelaksanaan: tanggal,
+      waktu_pelaksanaan: waktu,
+      tahap_ecp: safe(formData.tahapECP),
+      perihal_kpk: safe(formData.perihalKPK),
+
+      // Facilitators (names + institutions)
+      fasilitator1: safe(formData.namaFasilitator1),
+      fasilitator2: safe(formData.namaFasilitator2),
+      fasilitator3: safe(formData.namaFasilitator3),
+      instansi_fasilitator1: safe(formData.instansiFasilitator1),
+      instansi_fasilitator2: safe(formData.instansiFasilitator2),
+      instansi_fasilitator3: safe(formData.instansiFasilitator3),
+
+      // Penugasan fields
+      pimpinan: safe(formData.pimpinan),
+      instansi: safe(formData.instansi),
+
+      // BTS
+      bts_pelatihan1: safe(formData.btsPelatihan1),
+      bts_materi1: safe(formData.btsMateri1),
+      bts_pelatihan2: safe(formData.btsPelatihan2),
+      bts_materi2: safe(formData.btsMateri2),
+      bts_pelatihan3: safe(formData.btsPelatihan3),
+      bts_materi3: safe(formData.btsMateri3),
+
+      // Add more mappings here as your template grows
+    };
+  }
+
+
+  // ===== TEMPLATE PATH (Python-style deterministic path on Storage) =====
+  slugifyPathSegment(value) {
+    return String(value || "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, "_")
+      .replace(/[^\w\-]+/g, "_")
+      .replace(/_+/g, "_")
+      .replace(/^_+|_+$/g, "");
+  }
+
+  /**
+   * Adopted from your Python app concept:
+   * base: <sifat_surat>/<jenis_surat>/<collaboration_type>/
+   * then dynamic:
+   * - UNDANGAN + KURIKULUM SILABUS:
+   *   <jenis_kurikulum>/<perihal_kpk OR tahap_ecp>/<varian>/temp_letter_<collab>_<varian>.docx
+   * - UNDANGAN + BTS:
+   *   <varian>/temp_letter_<collab>_<varian>.docx
+   * - HASIL + KURIKULUM SILABUS:
+   *   <jenis_kurikulum>/<perihal_kpk OR tahap_ecp>/temp_letter_<collab>.docx
+   * - HASIL + BTS:
+   *   temp_letter_<collab>.docx
+   */
+  buildStorageTemplatePathFromPythonConcept(formData) {
+    const sifatRaw = (formData.sifatSurat || "").trim().toLowerCase();
+    const jenisRaw = (formData.jenisSurat || "").trim().toLowerCase();
+
+    const sifatSeg = this.slugifyPathSegment(formData.sifatSurat);
+    const jenisSeg = this.slugifyPathSegment(formData.jenisSurat);
+
+    const collab = formData.lingkupEksternal ? "eksternal" : "internal";
+
+    let varian = "";
+    if (formData.varianIndividu) varian = "individu";
+    else if (formData.varianPenugasan) varian = "penugasan";
+    else if (formData.varianKelompok) varian = "kelompok";
+
+    const varianSeg = this.slugifyPathSegment(varian);
+
+    const jenisKurikulum = this.slugifyPathSegment(formData.jenisKurikulum);
+    const perihalKPK = this.slugifyPathSegment(formData.perihalKPK);
+    const tahapECP = this.slugifyPathSegment(formData.tahapECP);
+
+    const subKey = formData.jenisKurikulum === "KPK" ? perihalKPK : tahapECP;
+
+    const base = `${sifatSeg}/${jenisSeg}/${collab}/`;
+
+    let dynamic = "";
+
+    if (sifatRaw === "undangan") {
+      if (jenisRaw === "kurikulum silabus") {
+        const parts = [jenisKurikulum, subKey, varianSeg].filter(Boolean);
+        dynamic = `${parts.join("/")}/temp_letter_${collab}_${varianSeg}.docx`;
+      } else if (jenisRaw === "bahan tayang standar") {
+        dynamic = `${varianSeg}/temp_letter_${collab}_${varianSeg}.docx`;
+      } else {
+        dynamic = `temp_letter_${collab}.docx`;
+      }
+    } else if (sifatRaw === "hasil") {
+      if (jenisRaw === "kurikulum silabus") {
+        const parts = [jenisKurikulum, subKey].filter(Boolean);
+        dynamic = `${parts.join("/")}/temp_letter_${collab}.docx`;
+      } else if (jenisRaw === "bahan tayang standar") {
+        dynamic = `temp_letter_${collab}.docx`;
+      } else {
+        dynamic = `temp_letter_${collab}.docx`;
+      }
+    } else {
+      // default safe fallback
+      dynamic = `temp_letter_${collab}.docx`;
+    }
+
+    const { bucketDefault } = this.getLetterTemplatesConfig();
+    return { bucket: bucketDefault, path: base + dynamic };
+  }
+
+  // ===== GENERATED LETTERS (Open in web + download) =====
+  getGeneratedLettersConfig() {
+    return {
+      bucket: window.SUPABASE_GENERATED_LETTERS_BUCKET || "generated-letters",
+      folder: window.SUPABASE_GENERATED_LETTERS_FOLDER || "generated",
+      signedExpirySeconds:
+        window.SUPABASE_GENERATED_LETTERS_SIGNED_EXPIRY || 60 * 60, // 1 hour
+      openWithOfficeViewer: true,
+    };
+  }
+
+  async uploadGeneratedDocx(blob, filename) {
+    const client = await this.getSupabaseClient();
+    if (!client) throw new Error("Supabase client tidak tersedia");
+
+    const cfg = this.getGeneratedLettersConfig();
+    const ts = new Date();
+    const safeName = this.slugifyPathSegment(filename.replace(/\.docx$/i, "")) || "surat";
+    const path = `${cfg.folder}/${ts.getFullYear()}/${String(ts.getMonth() + 1).padStart(2, "0")}/${Date.now()}_${safeName}.docx`;
+
+    const file = new File([blob], filename.endsWith(".docx") ? filename : `${filename}.docx`, {
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    });
+
+    const { error } = await client.storage.from(cfg.bucket).upload(path, file, {
+      cacheControl: "3600",
+      upsert: true,
+      contentType:
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    });
+
+    if (error) throw error;
+    return { bucket: cfg.bucket, path };
+  }
+
+  async getFileAccessUrls(bucket, path) {
+    const client = await this.getSupabaseClient();
+    const cfg = this.getGeneratedLettersConfig();
+
+    // Try public URL first (works only if bucket is public)
+    let directUrl = null;
+    try {
+      const pub = client.storage.from(bucket).getPublicUrl(path);
+      if (pub?.data?.publicUrl) directUrl = pub.data.publicUrl;
+    } catch (_) {}
+
+    // Always attempt signed URL (works for private buckets too, if user has permission)
+    let signedUrl = null;
+    try {
+      const signed = await client.storage.from(bucket).createSignedUrl(path, cfg.signedExpirySeconds);
+      if (signed?.data?.signedUrl) signedUrl = signed.data.signedUrl;
+    } catch (_) {}
+
+    // Prefer signed URL if available (more likely to be accessible for private buckets)
+    const downloadUrl = signedUrl || directUrl;
+
+    if (!downloadUrl) {
+      throw new Error(
+        "Tidak bisa membuat URL file. Pastikan bucket public atau policy Storage mengizinkan signedUrl."
+      );
+    }
+
+    // Office Online viewer for DOCX
+    const viewerUrl = cfg.openWithOfficeViewer
+      ? `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(downloadUrl)}`
+      : downloadUrl;
+
+    return { downloadUrl, viewerUrl };
+  }
+
+  openGeneratedLetter(viewerUrl) {
+    // If you have an iframe in modal, use it; else open new tab
+    const frame = document.getElementById("docPreviewFrame");
+    if (frame && frame.tagName === "IFRAME") {
+      frame.src = viewerUrl;
+    } else {
+      window.open(viewerUrl, "_blank", "noopener,noreferrer");
+    }
+  }
+
+  async publishAndOpenGeneratedLetter(docxBlob, filename) {
+    try {
+      const uploaded = await this.uploadGeneratedDocx(docxBlob, filename);
+      const { downloadUrl, viewerUrl } = await this.getFileAccessUrls(
+        uploaded.bucket,
+        uploaded.path
+      );
+
+      this.generatedDownloadUrl = downloadUrl;
+      this.generatedViewerUrl = viewerUrl;
+
+      // Auto open after generate
+      this.openGeneratedLetter(viewerUrl);
+
+      return { downloadUrl, viewerUrl };
+    } catch (err) {
+      console.warn(
+        "[GeneratedLetters] Upload/open gagal. Fallback ke download lokal.",
+        err
+      );
+      // Fallback: local download
+      await this.ensureDocxLibsLoaded();
+      window.saveAs(docxBlob, filename);
+      this.generatedDownloadUrl = null;
+      this.generatedViewerUrl = null;
+      return null;
+    }
+  }
+
+  async getTemplateRowForForm(formData) {
+    const keys = this.deriveTemplateKeys(formData);
+
+    const candidates = await this.fetchTemplateCandidates(keys);
+    const best = this.selectBestTemplate(candidates, keys);
+    return best;
+  }
+
+  async createDocxBlobFromSupabaseTemplate({ templateRow, payload }) {
+    await this.ensureDocxLibsLoaded();
+
+    const bucket =
+      templateRow.bucket || this.getLetterTemplatesConfig().bucketDefault;
+    const path = templateRow.storage_path;
+
+    if (!path) throw new Error("storage_path template kosong / belum diset");
+
+    const tplBlob = await this.downloadTemplateBlob({ bucket, path });
+    const ab = await this.blobToArrayBuffer(tplBlob);
+    const outBlob = this.renderDocx(ab, payload);
+    return outBlob;
+  }
+
+  // Generate document (DOCX)
+  async generateDocument() {
     const formData = this.collectFormData();
-    const templatePath = this.resolveTemplatePath(formData);
+    const filename = this.generateFilename(formData);
+    this.generatedFilename = filename;
 
-    console.log("Form Data:", formData);
-    console.log("Template Path:", templatePath);
+    // Build payload for placeholders like [fasilitator1], etc.
+    const payload = this.buildDocxPayload(formData);
 
-    // In a real implementation, this would:
-    // 1. Send form data to server
-    // 2. Server would load template
-    // 3. Replace placeholders with form data
-    // 4. Generate DOCX file
-    // 5. Return file for download
+    // 1) Prefer DB mapping (letter_templates) → Storage template
+    let templateRow = null;
+    try {
+      templateRow = await this.getTemplateRowForForm(formData);
+    } catch (err) {
+      console.warn(
+        "[Template] Gagal ambil mapping dari DB. Coba fallback path deterministic.",
+        err
+      );
+    }
 
-    this.generatedFilename = this.generateFilename(formData);
+    if (templateRow) {
+      const outBlob = await this.createDocxBlobFromSupabaseTemplate({
+        templateRow,
+        payload,
+      });
+
+      await this.publishAndOpenGeneratedLetter(outBlob, filename);
+      console.log("[Template] Using DB-mapped template:", templateRow);
+      return;
+    }
+
+    // 2) Fallback: Python-style deterministic Storage path (adopted concept)
+    try {
+      const built = this.buildStorageTemplatePathFromPythonConcept(formData);
+      console.log("[Template] Trying deterministic path:", built);
+
+      const tplBlob = await this.downloadTemplateBlob({
+        bucket: built.bucket,
+        path: built.path,
+      });
+      const ab = await this.blobToArrayBuffer(tplBlob);
+      const outBlob = this.renderDocx(ab, payload);
+
+      await this.publishAndOpenGeneratedLetter(outBlob, filename);
+      return;
+    } catch (err) {
+      console.warn(
+        "[Template] Deterministic path gagal. Pastikan file template ada di Storage dengan struktur folder yang benar.",
+        err
+      );
+    }
+
+    // 3) Last fallback: legacy templatePaths (only logs for now)
+    const legacyTemplatePath =
+      typeof this.resolveTemplatePath === "function"
+        ? this.resolveTemplatePath(formData)
+        : null;
+
+    console.warn(
+      "[Template] Tidak menemukan template. legacyTemplatePath:",
+      legacyTemplatePath
+    );
+
+    this.showNotification(
+      "Template tidak ditemukan. Pastikan tabel letter_templates aktif atau file template ada di Storage sesuai struktur folder.",
+      "error"
+    );
   }
+
+
 
   // Collect all form data
   collectFormData() {
@@ -1133,7 +1686,7 @@ class LetterGenerator {
     document.getElementById("successModal").classList.remove("hidden");
 
     // Add success animation
-    anime({
+    this.safeAnime({
       targets: "#successModal .bg-white",
       scale: [0.8, 1],
       opacity: [0, 1],
@@ -1149,15 +1702,26 @@ class LetterGenerator {
 
   // Handle download button click
   handleDownload() {
-    // In a real implementation, this would trigger the actual file download
-    this.showNotification("File siap diunduh", "success");
-    this.closeSuccessModal();
+    this.showNotification("Mengunduh surat...", "success");
 
-    // Simulate download
-    const link = document.createElement("a");
-    link.href = "#";
-    link.download = this.generatedFilename || "surat_template.docx";
-    link.click();
+    const url = this.generatedDownloadUrl;
+    const filename = this.generatedFilename || "surat_template.docx";
+
+    if (url) {
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } else {
+      // If we fell back to local saveAs, the file is already downloaded.
+      this.showNotification("File sudah diunduh secara lokal.", "info");
+    }
+
+    this.closeSuccessModal();
   }
 
   // Save form state to localStorage
@@ -1396,7 +1960,7 @@ class LetterGenerator {
     document.body.appendChild(notification);
 
     // Animate in
-    anime({
+    this.safeAnime({
       targets: notification,
       translateX: [300, 0],
       opacity: [0, 1],
@@ -1406,7 +1970,7 @@ class LetterGenerator {
 
     // Remove after 3 seconds
     setTimeout(() => {
-      anime({
+      this.safeAnime({
         targets: notification,
         translateX: [0, 300],
         opacity: [1, 0],
@@ -1422,7 +1986,8 @@ class LetterGenerator {
 
 // Initialize the application when DOM is loaded
 document.addEventListener("DOMContentLoaded", () => {
-  new LetterGenerator();
+  window.__letterGenerator = new LetterGenerator();
+  console.log('[LetterGenerator] Loaded main.js and created instance');
 });
 
 // Handle page visibility changes
