@@ -1,7 +1,8 @@
 module.exports = {
   style: {
     postcss: {
-      mode: "file",
+      mode: "extends",
+      plugins: [require("@tailwindcss/postcss")],
     },
   },
 };

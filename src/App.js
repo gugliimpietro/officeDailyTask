@@ -7,6 +7,7 @@ import Dashboard from "./components/Dashboard";
 import TaskDetail from "./components/TaskDetail";
 import Toast from "./components/Toasts";
 import LetterGeneratorModal from "./components/LetterGeneratorModal";
+import LandingPage from "./components/LandingPage";
 
 const LETTER_TEMPLATE_CONFIG = {
   mode: "gdrive",
@@ -40,6 +41,8 @@ function AppShell() {
     reopenTask,
     acceptTask,
     rejectTask,
+    startLogin,
+    backToLanding,
   } = useAppState();
   const [toastMessage, setToastMessage] = useState("");
   const [toastVariant, setToastVariant] = useState("info");
@@ -117,8 +120,12 @@ function AppShell() {
     unseen.forEach((task) => memberSeenTasksRef.current.add(task.id));
   }, [tasks, user, showToast, backToDashboard]);
 
+  if (!user && view === "landing") {
+    return <LandingPage onSignIn={startLogin} />;
+  }
+
   if (!user || view === "login") {
-    return <LoginPage onLogin={login} />;
+    return <LoginPage onLogin={login} onBack={backToLanding} />;
   }
 
   return (

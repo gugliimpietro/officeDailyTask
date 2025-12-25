@@ -4,229 +4,200 @@ import React, {
   useMemo,
   useState,
   useCallback,
+  useEffect,
 } from "react";
 import { INITIAL_TASKS, INITIAL_USERS } from "../data/mockData";
+// import { supabase } from "../supabaseClient"; // Uncomment when ready for real backend
 
 const AppStateContext = createContext(null);
 
 export function AppStateProvider({ children }) {
-  const [user, setUser] = useState(null);
+  // Auth State
+  const [user, setUser] = useState(() => {
+    // Persist login across refreshes (Basic implementation)
+    const saved = localStorage.getItem("odt_user");
+    return saved ? JSON.parse(saved) : null;
+  });
+
+  // Data State
   const [tasks, setTasks] = useState(INITIAL_TASKS);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null);
 
-  // simple "routing" state (dashboard / detail)
-  const [view, setView] = useState("login");
-  const [activeTaskId, setActiveTaskId] = useState(null);
+  // Sync user to localStorage
+  useEffect(() => {
+    if (user) localStorage.setItem("odt_user", JSON.stringify(user));
+    else localStorage.removeItem("odt_user");
+  }, [user]);
 
-  // ---- ACTIONS ----
-  const login = useCallback((username, password) => {
+  // ---- AUTH ACTIONS ----
+  const login = useCallback(async (username, password) => {
+    setIsLoading(true);
+    // Simulate API delay
+    await new Promise((r) => setTimeout(r, 800));
+
+    // REAL BACKEND TODO:
+    // const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+
     const found = INITIAL_USERS.find(
       (u) => u.username === username && u.password === password
     );
-    if (!found) return { ok: false, message: "Username / password salah" };
+
+    setIsLoading(false);
+
+    if (!found) {
+      return { ok: false, message: "Username atau password tidak ditemukan." };
+    }
 
     setUser(found);
-    setView("dashboard");
     return { ok: true };
   }, []);
 
   const logout = useCallback(() => {
     setUser(null);
-    setView("login");
-    setActiveTaskId(null);
+    // window.location.href = "/"; // Optional: Force reload
   }, []);
 
-  const openTask = useCallback((taskId) => {
-    setActiveTaskId(taskId);
-    setView("taskDetail");
-  }, []);
+  // ---- TASK ACTIONS ----
 
-  const backToDashboard = useCallback(() => {
-    setActiveTaskId(null);
-    setView("dashboard");
-  }, []);
-
-  // helper: get active task
-  const activeTask = useMemo(
-    () => tasks.find((t) => t.id === activeTaskId) || null,
-    [tasks, activeTaskId]
-  );
-
-  // Example: update a task safely
-  const updateTask = useCallback((taskId, patch) => {
+  // Generic helper to update local state (Mock DB)
+  const updateTaskLocal = (taskId, patch) => {
     setTasks((prev) =>
       prev.map((t) => (t.id === taskId ? { ...t, ...patch } : t))
     );
-  }, []);
+  };
 
   const addTask = useCallback((newTask) => {
     setTasks((prev) => {
       const nextId =
-        prev.reduce((max, task) => Math.max(max, task.id || 0), 0) + 1;
+        prev.length > 0 ? Math.max(...prev.map((t) => t.id)) + 1 : 1;
       const normalizedTask = {
         ...newTask,
         id: nextId,
         code: newTask.code || `TASK-${String(nextId).padStart(4, "0")}`,
-        createdAt: newTask.createdAt || new Date().toISOString(),
-        comments: newTask.comments ?? [],
-        reopenRequested: newTask.reopenRequested ?? false,
-        status: newTask.status || "New",
+        createdAt: new Date().toISOString(),
+        comments: [],
+        status: "New",
+        // Default assignments
+        assigneeId: null,
+        teamId: newTask.teamId || 1, // Default team
       };
-
-      return [...prev, normalizedTask];
+      return [normalizedTask, ...prev];
     });
   }, []);
 
   const addComment = useCallback(
     (taskId, payload) => {
-      if (!payload) return;
+      if (!payload?.text) return;
+
+      const newComment = {
+        id: `c-${taskId}-${Date.now()}`,
+        text: payload.text,
+        attachment: payload.attachment || null,
+        createdAt: new Date().toISOString(),
+        authorId: user?.id || "unknown",
+        authorName: user?.name || "Unknown",
+        role: user?.role || "",
+      };
+
       setTasks((prev) =>
-        prev.map((task) => {
-          if (task.id !== taskId) return task;
-          const nextComment = {
-            id: `c-${taskId}-${Date.now()}`,
-            text: payload.text ?? "",
-            attachment: payload.attachment ?? null,
-            createdAt: new Date().toISOString(),
-            authorId: user?.id ?? "unknown",
-            authorName: user?.name ?? "Unknown",
-            role: user?.role ?? "",
-          };
-          const existingComments = Array.isArray(task.comments)
-            ? task.comments
-            : [];
-          return {
-            ...task,
-            comments: [...existingComments, nextComment],
-          };
+        prev.map((t) => {
+          if (t.id !== taskId) return t;
+          return { ...t, comments: [...(t.comments || []), newComment] };
         })
       );
     },
     [user]
   );
 
-  const closeTask = useCallback(
-    (taskId, note) => {
-      setTasks((prev) =>
-        prev.map((task) =>
-          task.id === taskId
-            ? {
-                ...task,
-                status: "Done",
-                completedAt: new Date().toISOString(),
-                closeNote: note || "",
-                closedById: user?.id ?? null,
-                closedByName: user?.name ?? "",
-                reopenRequested: false,
-                reopenReason: null,
-                reopenRequestedBy: null,
-                reopenRequestedByName: null,
-              }
-            : task
-        )
-      );
-    },
-    [user]
-  );
-
-  const requestReopen = useCallback(
-    (taskId, reason) => {
-      setTasks((prev) =>
-        prev.map((task) =>
-          task.id === taskId
-            ? {
-                ...task,
-                reopenRequested: true,
-                reopenReason: reason || "",
-                reopenRequestedBy: user?.id ?? null,
-                reopenRequestedByName: user?.name ?? "",
-                reopenRequestedAt: new Date().toISOString(),
-              }
-            : task
-        )
-      );
-    },
-    [user]
-  );
-
-  const reopenTask = useCallback(
-    (taskId, note) => {
-      setTasks((prev) =>
-        prev.map((task) =>
-          task.id === taskId
-            ? {
-                ...task,
-                status: "Running",
-                reopenRequested: false,
-                reopenReason: null,
-                reopenRequestedBy: null,
-                reopenRequestedByName: null,
-                reopenedAt: new Date().toISOString(),
-                reopenHandledById: user?.id ?? null,
-                reopenHandledByName: user?.name ?? "",
-                reopenHandledNote: note || "",
-              }
-            : task
-        )
-      );
-    },
-    [user]
-  );
+  const updateTaskStatus = useCallback((taskId, status, extraFields = {}) => {
+    updateTaskLocal(taskId, { status, ...extraFields });
+  }, []);
 
   const acceptTask = useCallback(
     (taskId) => {
-      updateTask(taskId, { status: "Running" });
+      updateTaskStatus(taskId, "Running", {
+        startedAt: new Date().toISOString(),
+      });
     },
-    [updateTask]
+    [updateTaskStatus]
   );
 
   const rejectTask = useCallback(
     (taskId, reason) => {
-      updateTask(taskId, { status: "Rejected", rejectReason: reason });
+      updateTaskStatus(taskId, "Rejected", {
+        rejectReason: reason,
+        rejectedAt: new Date().toISOString(),
+        rejectedBy: user?.id,
+      });
     },
-    [updateTask]
+    [updateTaskStatus, user]
   );
+
+  const closeTask = useCallback(
+    (taskId, note) => {
+      updateTaskStatus(taskId, "Done", {
+        completedAt: new Date().toISOString(),
+        closeNote: note,
+        closedById: user?.id,
+        closedByName: user?.name,
+      });
+    },
+    [updateTaskStatus, user]
+  );
+
+  const requestReopen = useCallback(
+    (taskId, reason) => {
+      updateTaskLocal(taskId, {
+        reopenRequested: true,
+        reopenReason: reason,
+        reopenRequestedBy: user?.id,
+        reopenRequestedByName: user?.name,
+        reopenRequestedAt: new Date().toISOString(),
+      });
+    },
+    [user]
+  );
+
+  const reopenTask = useCallback((taskId, note) => {
+    updateTaskLocal(taskId, {
+      status: "Running",
+      reopenRequested: false,
+      reopenedAt: new Date().toISOString(),
+      reopenHandledNote: note,
+    });
+  }, []);
 
   const value = useMemo(
     () => ({
       user,
       tasks,
-      view,
-      activeTaskId,
-      activeTask,
-
+      isLoading,
+      error,
       login,
       logout,
-      openTask,
-      backToDashboard,
-      updateTask,
-      setTasks, // keep if you still need direct control
-
       addTask,
       addComment,
+      acceptTask,
+      rejectTask,
       closeTask,
       requestReopen,
       reopenTask,
-      acceptTask,
-      rejectTask,
     }),
     [
       user,
       tasks,
-      view,
-      activeTaskId,
-      activeTask,
+      isLoading,
+      error,
       login,
       logout,
-      openTask,
-      backToDashboard,
-      updateTask,
       addTask,
       addComment,
+      acceptTask,
+      rejectTask,
       closeTask,
       requestReopen,
       reopenTask,
-      acceptTask,
-      rejectTask,
     ]
   );
 
