@@ -8,9 +8,7 @@ import {
   XCircle,
 } from "lucide-react";
 import TaskItem from "./TaskItem";
-import LetterGeneratorModal from "./LetterGeneratorModal";
 import { CreateTaskModal, RejectTaskModal } from "./Modals";
-
 
 function StatCard({ label, value, icon: Icon, color }) {
   return (

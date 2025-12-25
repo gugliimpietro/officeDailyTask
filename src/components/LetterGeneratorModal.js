@@ -17,7 +17,6 @@ export default function LetterGeneratorModal({ onClose }) {
   // you can clear localStorage inside the iframe after it loads.
   const handleIframeLoad = () => {
     try {
-      const w = iframeRef.current?.contentWindow;
       // Comment this out if you WANT auto-restore draft behavior from main.js
       // (main.js uses localStorage key "letterFormState"). :contentReference[oaicite:7]{index=7}
       // w?.localStorage?.removeItem("letterFormState");
