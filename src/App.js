@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useState, useCallback } from "react";
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from "react-router-dom";
 import { AppStateProvider, useAppState } from "./context/AppStateContext";
 
 import Navbar from "./components/Navbar";
@@ -7,190 +8,81 @@ import Dashboard from "./components/Dashboard";
 import TaskDetail from "./components/TaskDetail";
 import Toast from "./components/Toasts";
 import LetterGeneratorModal from "./components/LetterGeneratorModal";
-import LandingPage from "./components/LandingPage";
 
-const LETTER_TEMPLATE_CONFIG = {
-  mode: "gdrive",
-  // Your Apps Script Web App URL (we will create this below)
-  gdriveProxyUrl:
-    "https://script.google.com/macros/s/AKfycby2NVET8I7XlBZLnhgwg0UK_ziMgHtC05hK9w89fRSrRczdJRcUdLXojm-NboalY2Jw/exec",
-
-  // Map keys => template source
-  templates: {
-    internal_undangan: { source: "gdrive", fileId: "FILE_ID_1" },
-    internal_hasil: { source: "gdrive", fileId: "FILE_ID_2" },
-    external_undangan: { source: "gdrive", fileId: "FILE_ID_3" },
-    external_hasil: { source: "gdrive", fileId: "FILE_ID_4" },
-  },
-};
-
-function AppShell() {
-  const {
-    user,
-    view,
-    activeTask,
-    login,
-    logout,
-    openTask,
-    backToDashboard,
-    tasks,
-    addTask,
-    addComment,
-    closeTask,
-    requestReopen,
-    reopenTask,
-    acceptTask,
-    rejectTask,
-    startLogin,
-    backToLanding,
-  } = useAppState();
-  const [toastMessage, setToastMessage] = useState("");
-  const [toastVariant, setToastVariant] = useState("info");
-  const [toastKey, setToastKey] = useState(0);
-  const [toastAction, setToastAction] = useState(null);
+// --- Layout Component for Protected Routes ---
+function ProtectedLayout() {
+  const { user, tasks } = useAppState();
+  const location = useLocation();
   const [showLetterModal, setShowLetterModal] = useState(false);
-  const [readNotifications, setReadNotifications] = useState(() => new Set());
-  const memberSeenTasksRef = useRef(new Set());
+  
+  // Toast State
+  const [toast, setToast] = useState({ show: false, message: '', variant: 'info', action: null });
 
-  const showToast = useCallback((message, variant = "info", options = {}) => {
-    if (!message) return;
-    setToastVariant(variant);
-    setToastKey(Date.now());
-    setToastMessage(message);
-    setToastAction(() => options.onClick || null);
-  }, []);
+  // Helper to expose toast trigger to children via Outlet context if needed
+  // (Or you can move Toast to Context for global access)
+  const triggerToast = (message, variant = "info") => {
+    setToast({ show: true, message, variant, key: Date.now() });
+  };
 
-  const handleToastClose = useCallback(() => {
-    setToastMessage("");
-    setToastAction(null);
-  }, []);
-
-  const openLetterModal = useCallback(() => setShowLetterModal(true), []);
-  const closeLetterModal = useCallback(() => setShowLetterModal(false), []);
-
-  const handleAddTask = useCallback(
-    (taskPayload) => {
-      addTask(taskPayload);
-      showToast("Pekerjaan baru berhasil dibuat.", "success");
-    },
-    [addTask, showToast]
-  );
-
-  const handleNotificationClick = useCallback(
-    (task, type) => {
-      if (!task) return;
-      setReadNotifications((prev) => {
-        const next = new Set(prev);
-        next.add(`${task.id}-${type}`);
-        return next;
-      });
-      if (task.id) {
-        openTask(task.id);
-      }
-    },
-    [openTask]
-  );
-
-  useEffect(() => {
-    setReadNotifications(new Set());
-    memberSeenTasksRef.current = new Set();
-  }, [user?.id]);
-
-  useEffect(() => {
-    if (!user || user.role !== "TEAM_MEMBER") return;
-    const assignedNew = tasks.filter(
-      (task) => task.assigneeId === user.id && task.status === "New"
-    );
-    const unseen = assignedNew.filter(
-      (task) => !memberSeenTasksRef.current.has(task.id)
-    );
-
-    if (unseen.length === 0) return;
-
-    const message =
-      unseen.length === 1
-        ? `Anda memiliki pekerjaan baru: "${unseen[0].title}".`
-        : `Anda memiliki ${unseen.length} pekerjaan baru yang menunggu tindakan.`;
-
-    showToast(message, "info", {
-      onClick: () => {
-        backToDashboard();
-      },
-    });
-    unseen.forEach((task) => memberSeenTasksRef.current.add(task.id));
-  }, [tasks, user, showToast, backToDashboard]);
-
-  if (!user && view === "landing") {
-    return <LandingPage onSignIn={startLogin} />;
-  }
-
-  if (!user || view === "login") {
-    return <LoginPage onLogin={login} onBack={backToLanding} />;
+  if (!user) {
+    return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
   return (
-    <div className="relative min-h-screen bg-slate-100 text-slate-900">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.08),_transparent_55%)]" />
-      <div className="relative min-h-screen flex flex-col">
+    <div className="relative min-h-screen bg-slate-50 text-slate-900 font-sans">
+      {/* Dynamic Background */}
+      <div className="fixed inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-100/40 via-slate-50 to-slate-100 -z-10" />
+      
+      <div className="relative flex flex-col min-h-screen">
         <Navbar
           user={user}
-          tasks={tasks}
-          onOpenLetterModal={openLetterModal}
-          onLogout={logout}
-          onNotificationClick={handleNotificationClick}
-          readNotifications={readNotifications}
+          tasks={tasks} // Pass tasks for notification badges
+          onOpenLetterModal={() => setShowLetterModal(true)}
         />
 
-        <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          {view === "dashboard" && (
-            <Dashboard
-              user={user}
-              tasks={tasks}
-              onTaskClick={openTask}
-              onAddTask={handleAddTask}
-              onAcceptTask={acceptTask}
-              onRejectTask={rejectTask}
-            />
-          )}
-          {view === "taskDetail" && activeTask && (
-            <TaskDetail
-              task={activeTask}
-              currentUser={user}
-              onBack={backToDashboard}
-              onAddComment={addComment}
-              onCloseTask={closeTask}
-              onRequestReopen={requestReopen}
-              onReopenTask={reopenTask}
-              onAcceptTask={acceptTask}
-              onRejectTask={rejectTask}
-            />
-          )}
+        <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-in fade-in duration-500">
+          <Outlet context={{ triggerToast }} />
         </main>
       </div>
+
       {showLetterModal && (
         <LetterGeneratorModal
           user={user}
-          onClose={closeLetterModal}
-          templateConfig={LETTER_TEMPLATE_CONFIG}
+          onClose={() => setShowLetterModal(false)}
+          templateConfig={{ mode: "gdrive", templates: {} }} // Config moved here
         />
       )}
-      {toastMessage && (
+
+      {toast.show && (
         <Toast
-          key={toastKey}
-          message={toastMessage}
-          variant={toastVariant}
-          onClose={handleToastClose}
-          onClick={toastAction}
+          key={toast.key}
+          message={toast.message}
+          variant={toast.variant}
+          onClose={() => setToast(prev => ({ ...prev, show: false }))}
         />
       )}
     </div>
   );
 }
 
+// --- Main App Component ---
 export default function App() {
   return (
-    <AppStateProvider>
-      <AppShell />
-    </AppStateProvider>
+    <BrowserRouter>
+      <AppStateProvider>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          
+          <Route element={<ProtectedLayout />}>
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/task/:taskId" element={<TaskDetail />} />
+          </Route>
+
+          {/* Catch all */}
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Routes>
+      </AppStateProvider>
+    </BrowserRouter>
   );
 }

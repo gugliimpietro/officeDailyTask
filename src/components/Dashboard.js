@@ -1,318 +1,234 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
+import { useNavigate, useOutletContext } from "react-router-dom";
+import { useAppState } from "../context/AppStateContext";
 import {
   Search,
   Plus,
   CheckSquare,
   Clock,
-  AlertCircle,
   XCircle,
-} from "lucide-react";
+  Filter
+} from "lucide-react"; // Removed AlertCircle
 import TaskItem from "./TaskItem";
 import { CreateTaskModal, RejectTaskModal } from "./Modals";
 
-function StatCard({ label, value, icon: Icon, color }) {
+function StatCard({ label, value, icon: Icon, color, bg }) {
   return (
-    <div className="bg-white/90 p-4 rounded-2xl shadow-sm border border-gray-200 flex items-center gap-3">
-      <div className={`p-3 rounded-2xl bg-slate-50 ${color}`}>
-        <Icon className="w-5 h-5" />
+    <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex items-center gap-4 transition-all hover:shadow-md">
+      <div className={`p-3 rounded-lg ${bg} ${color}`}>
+        <Icon className="w-6 h-6" />
       </div>
       <div>
-        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide line-clamp-1">
+        <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
           {label}
         </p>
-        <p className="text-2xl font-bold text-slate-900">{value}</p>
+        <p className="text-2xl font-bold text-slate-800 mt-0.5">{value}</p>
       </div>
     </div>
   );
 }
 
-/**
- * Props expected:
- * - user
- * - tasks
- * - onTaskClick(task)
- * - onAddTask(newTaskData)
- * - onAcceptTask(taskId)
- * - onRejectTask(taskId, reason)
- */
-export default function Dashboard({
-  user,
-  tasks = [],
-  onTaskClick,
-  onAddTask,
-  onAcceptTask,
-  onRejectTask,
-}) {
-  console.log("DASHBOARD LOADED ✅", { user });
+export default function Dashboard() {
+  const navigate = useNavigate();
+  const { user, tasks, addTask, acceptTask, rejectTask } = useAppState();
+  const { triggerToast } = useOutletContext() || { triggerToast: () => {} };
+
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [rejectModalTaskId, setRejectModalTaskId] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [filterType, setFilterType] = useState("all"); 
 
-  // Role-based visibility
-  let filteredTasks = tasks.filter((task) => {
-    if (user.role === "ADMIN") return true;
-    if (user.role === "TEAM_LEADER") return task.teamId === user.teamId;
-    if (user.role === "TEAM_MEMBER") return task.teamId === user.teamId;
-    return false;
-  });
+  // --- Filtering Logic ---
+  const filteredTasks = useMemo(() => {
+    if (!user) return []; 
 
-  // Search
-  if (searchQuery.trim()) {
-    const lowerQuery = searchQuery.toLowerCase();
-    filteredTasks = filteredTasks.filter(
-      (task) =>
-        task.title.toLowerCase().includes(lowerQuery) ||
-        task.code.toLowerCase().includes(lowerQuery) ||
-        (task.jobType && task.jobType.toLowerCase().includes(lowerQuery))
-    );
-  }
+    let result = tasks;
 
-  const newTasks = filteredTasks.filter((t) => t.status === "New");
-  const activeTasks = filteredTasks.filter((t) => t.status === "Running");
-  const completedTasks = filteredTasks.filter((t) => t.status === "Done");
-  const rejectedTasks = filteredTasks.filter((t) => t.status === "Rejected");
+    // 1. Role Filter
+    if (user.role !== "ADMIN") {
+      result = result.filter(t => t.teamId === user.teamId);
+    }
+
+    // 2. Search Filter
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(
+        t =>
+          t.title.toLowerCase().includes(q) ||
+          t.code.toLowerCase().includes(q) ||
+          (t.jobType && t.jobType.toLowerCase().includes(q))
+      );
+    }
+
+    // 3. Quick Filters
+    if (filterType === "urgent") {
+      result = result.filter(t => t.priority === "High");
+    }
+
+    return result;
+  }, [tasks, user, searchQuery, filterType]);
+
+  const stats = useMemo(() => ({
+    new: filteredTasks.filter(t => t.status === "New"),
+    active: filteredTasks.filter(t => t.status === "Running"),
+    completed: filteredTasks.filter(t => t.status === "Done"),
+    rejected: filteredTasks.filter(t => t.status === "Rejected"),
+    urgent: filteredTasks.filter(t => t.priority === "High")
+  }), [filteredTasks]);
+
+  const handleTaskClick = (taskId) => {
+    navigate(`/task/${taskId}`);
+  };
+
+  const handleCreateTask = (payload) => {
+    addTask(payload);
+    setShowCreateModal(false);
+    triggerToast("Pekerjaan baru berhasil dibuat", "success");
+  };
+
+  const handleRejectConfirm = (taskId, reason) => {
+    rejectTask(taskId, reason);
+    setRejectModalTaskId(null);
+    triggerToast("Pekerjaan telah ditolak", "warning");
+  };
+
+  if (!user) return null; 
 
   return (
-    <div className="space-y-8">
-      <header className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6 space-y-5">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-sm text-slate-500">
-                Selamat datang, {user?.name || "-"}
-              </p>
-              <h2 className="text-3xl font-bold text-slate-900 mt-1">
-                Dasbor Pekerjaan
-              </h2>
-              <p className="text-sm text-slate-500 mt-1">
-                Kelola prioritas harian dan pantau progres tim di satu tempat.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex flex-col sm:flex-row gap-3">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Cari pekerjaan, kode, atau jenis..."
-                className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl text-sm bg-white shadow-inner focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-            </div>
-            <div className="flex items-center justify-between sm:justify-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide shadow-inner">
-              <span>Terdata</span>
-              <span className="text-base text-slate-900">
-                {filteredTasks.length}
-              </span>
-            </div>
-          </div>
+    <div className="space-y-8 pb-12">
+      {/* --- Header Section --- */}
+      <div className="flex flex-col lg:flex-row gap-6 justify-between items-start">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">
+            Dasbor Pekerjaan
+          </h1>
+          <p className="text-slate-500 mt-2">
+            Halo, <span className="font-semibold text-blue-600">{user.name}</span>. 
+            Anda memiliki {stats.active.length} pekerjaan aktif hari ini.
+          </p>
         </div>
 
-        <div className="rounded-2xl bg-gradient-to-br from-blue-600 via-blue-500 to-indigo-500 text-white p-6 flex flex-col gap-6 shadow-lg border border-blue-500/30">
-          <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-white/70">
-              Status Tim
-            </p>
-            <p className="text-2xl font-semibold mt-2">
-              {newTasks.length} tugas baru
-            </p>
-            <p className="text-sm text-white/80">
-              Menunggu distribusi dan konfirmasi.
-            </p>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-white/10 rounded-xl px-4 py-3 border border-white/20">
-              <p className="text-xs text-white/70 uppercase tracking-wide">
-                Aktif
-              </p>
-              <p className="text-xl font-bold">{activeTasks.length}</p>
-            </div>
-            <div className="bg-white/10 rounded-xl px-4 py-3 border border-white/20">
-              <p className="text-xs text-white/70 uppercase tracking-wide">
-                Selesai
-              </p>
-              <p className="text-xl font-bold">{completedTasks.length}</p>
-            </div>
-          </div>
-          {user.role === "TEAM_LEADER" ? (
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="inline-flex items-center justify-center gap-2 bg-white text-blue-700 px-4 py-2.5 rounded-xl font-semibold shadow-lg shadow-blue-900/10 hover:bg-blue-50 transition-transform hover:-translate-y-0.5"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Buat Pekerjaan</span>
-            </button>
-          ) : (
-            <div className="text-sm text-white/80 bg-white/10 rounded-xl px-4 py-3 border border-white/10">
-              Fokus pada {activeTasks.length || "tidak ada"} pekerjaan aktif dan{" "}
-              {newTasks.length || "tidak ada"} pekerjaan baru.
-            </div>
-          )}
-        </div>
-      </header>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
-        <StatCard
-          label="Semua Pekerjaan"
-          value={filteredTasks.length}
-          icon={CheckSquare}
-          color="text-blue-600"
-        />
-        <StatCard
-          label="Dalam Pengerjaan"
-          value={activeTasks.length}
-          icon={Clock}
-          color="text-orange-600"
-        />
-        <StatCard
-          label="Selesai"
-          value={completedTasks.length}
-          icon={CheckSquare}
-          color="text-green-600"
-        />
-        <StatCard
-          label="Ditolak"
-          value={rejectedTasks.length}
-          icon={XCircle}
-          color="text-red-800"
-        />
-        <StatCard
-          label="Urgent"
-          value={filteredTasks.filter((t) => t.priority === "High").length}
-          icon={AlertCircle}
-          color="text-red-600"
-        />
+        {user.role === "TEAM_LEADER" && (
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="group flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-3 rounded-lg font-medium shadow-lg shadow-blue-500/20 transition-all hover:-translate-y-0.5"
+          >
+            <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform" />
+            <span>Buat Pekerjaan Baru</span>
+          </button>
+        )}
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)] gap-6">
-        {/* New + Running */}
-        <div className="space-y-0 bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-          {/* New Tasks */}
-          <div className="bg-slate-50 px-6 py-4 border-b border-gray-100 flex justify-between items-center">
-            <h3 className="font-bold text-slate-800 flex items-center gap-2 text-sm uppercase tracking-wide">
-              <div className="w-2 h-2 rounded-full bg-blue-500 shadow-sm"></div>{" "}
-              Pekerjaan Baru
-            </h3>
-            <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
-              {newTasks.length}
-            </span>
-          </div>
-
-          <div className="divide-y divide-gray-50">
-            {newTasks.length > 0 ? (
-              newTasks.map((task) => (
-                <TaskItem
-                  key={task.id}
-                  task={task}
-                  user={user}
-                  onTaskClick={onTaskClick}
-                  onAcceptTask={onAcceptTask}
-                  setRejectModalTaskId={setRejectModalTaskId}
-                />
-              ))
-            ) : (
-              <div className="p-8 text-center">
-                <p className="text-sm text-gray-400">
-                  Tidak ada pekerjaan baru.
-                </p>
-              </div>
-            )}
-          </div>
-
-          <div className="h-px bg-gray-100 border-t border-b border-gray-200"></div>
-
-          {/* Active Tasks */}
-          <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-orange-50/40">
-            <h3 className="font-bold text-slate-800 flex items-center gap-2 text-sm uppercase tracking-wide">
-              <div className="w-2 h-2 rounded-full bg-orange-500 shadow-sm"></div>{" "}
-              Dalam Pengerjaan
-            </h3>
-            <span className="text-xs font-bold text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full">
-              {activeTasks.length}
-            </span>
-          </div>
-
-          <div className="divide-y divide-gray-50">
-            {activeTasks.length > 0 ? (
-              activeTasks.map((task) => (
-                <TaskItem
-                  key={task.id}
-                  task={task}
-                  user={user}
-                  onTaskClick={onTaskClick}
-                  onAcceptTask={onAcceptTask}
-                  setRejectModalTaskId={setRejectModalTaskId}
-                />
-              ))
-            ) : (
-              <div className="p-8 text-center">
-                <p className="text-sm text-gray-400">
-                  Tidak ada pekerjaan aktif.
-                </p>
-              </div>
-            )}
-          </div>
+      {/* --- Search & Filter Bar --- */}
+      <div className="bg-white p-2 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <input
+            type="text"
+            placeholder="Cari nomor referensi, judul, atau jenis..."
+            className="w-full pl-10 pr-4 py-2.5 bg-transparent text-sm focus:outline-none placeholder:text-slate-400"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
         </div>
+        <div className="flex gap-2">
+          <button 
+            onClick={() => setFilterType("all")}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filterType === 'all' ? 'bg-slate-100 text-slate-900' : 'text-slate-500 hover:bg-slate-50'}`}
+          >
+            Semua
+          </button>
+          <button 
+             onClick={() => setFilterType("urgent")}
+             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${filterType === 'urgent' ? 'bg-red-50 text-red-700' : 'text-slate-500 hover:bg-slate-50'}`}
+          >
+            <Filter className="w-3 h-3" /> Urgent
+          </button>
+        </div>
+      </div>
 
-        {/* Done + Rejected */}
-        <div className="flex flex-col gap-6">
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden flex flex-col flex-1">
-            <div className="px-5 py-4 border-b border-gray-100 flex justify-between items-center bg-green-50/40">
-              <h3 className="font-bold text-slate-800 flex items-center gap-2 text-sm uppercase tracking-wide">
-                <div className="w-2 h-2 rounded-full bg-green-500 shadow-sm"></div>{" "}
-                Selesai
+      {/* --- Stats Grid --- */}
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+        <StatCard label="Semua" value={filteredTasks.length} icon={CheckSquare} color="text-slate-600" bg="bg-slate-100" />
+        <StatCard label="Baru" value={stats.new.length} icon={Plus} color="text-blue-600" bg="bg-blue-50" />
+        <StatCard label="Proses" value={stats.active.length} icon={Clock} color="text-orange-600" bg="bg-orange-50" />
+        <StatCard label="Selesai" value={stats.completed.length} icon={CheckSquare} color="text-green-600" bg="bg-green-50" />
+        <StatCard label="Ditolak" value={stats.rejected.length} icon={XCircle} color="text-red-600" bg="bg-red-50" />
+      </div>
+
+      {/* --- Main Content Grid --- */}
+      <div className="grid lg:grid-cols-3 gap-8">
+        
+        {/* Left Column: Actionable Tasks (New & Active) */}
+        <div className="lg:col-span-2 space-y-6">
+          {/* New Tasks Section */}
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-100 bg-blue-50/50 flex justify-between items-center">
+              <h3 className="font-bold text-slate-800 text-sm uppercase tracking-wide flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-blue-500" />
+                Butuh Tindakan (Baru)
               </h3>
-              <span className="text-xs font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
-                {completedTasks.length}
-              </span>
+              <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-1 rounded-full">{stats.new.length}</span>
             </div>
-
-            <div className="divide-y divide-gray-50 flex-1 opacity-80 hover:opacity-100 transition-opacity">
-              {completedTasks.length > 0 ? (
-                completedTasks.map((task) => (
-                  <TaskItem
-                    key={task.id}
-                    task={task}
+            <div className="divide-y divide-slate-50">
+              {stats.new.length === 0 ? (
+                <div className="p-8 text-center text-slate-400 text-sm">Tidak ada pekerjaan baru.</div>
+              ) : (
+                stats.new.map(task => (
+                  <TaskItem 
+                    key={task.id} 
+                    task={task} 
                     user={user}
-                    onTaskClick={onTaskClick}
+                    onTaskClick={() => handleTaskClick(task.id)}
+                    onAcceptTask={acceptTask}
+                    setRejectModalTaskId={setRejectModalTaskId}
                   />
                 ))
-              ) : (
-                <div className="p-8 text-center">
-                  <p className="text-sm text-gray-400">
-                    Belum ada pekerjaan selesai.
-                  </p>
-                </div>
               )}
             </div>
           </div>
 
-          {rejectedTasks.length > 0 && (
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
-              <div className="px-5 py-4 border-b border-gray-100 flex justify-between items-center bg-red-50/40">
-                <h3 className="font-bold text-slate-800 flex items-center gap-2 text-sm uppercase tracking-wide">
-                  <div className="w-2 h-2 rounded-full bg-red-500 shadow-sm"></div>{" "}
-                  Ditolak
-                </h3>
-                <span className="text-xs font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
-                  {rejectedTasks.length}
-                </span>
-              </div>
-
-              <div className="divide-y divide-gray-50 flex-1 opacity-80 hover:opacity-100 transition-opacity">
-                {rejectedTasks.map((task) => (
-                  <TaskItem
-                    key={task.id}
-                    task={task}
-                    user={user}
-                    onTaskClick={onTaskClick}
-                  />
-                ))}
-              </div>
+          {/* Active Tasks Section */}
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+             <div className="px-6 py-4 border-b border-slate-100 bg-orange-50/50 flex justify-between items-center">
+              <h3 className="font-bold text-slate-800 text-sm uppercase tracking-wide flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-orange-500" />
+                Sedang Dikerjakan
+              </h3>
+              <span className="bg-orange-100 text-orange-700 text-xs font-bold px-2 py-1 rounded-full">{stats.active.length}</span>
             </div>
-          )}
+            <div className="divide-y divide-slate-50">
+              {stats.active.length === 0 ? (
+                <div className="p-8 text-center text-slate-400 text-sm">Tidak ada pekerjaan aktif.</div>
+              ) : (
+                stats.active.map(task => (
+                  <TaskItem 
+                    key={task.id} 
+                    task={task} 
+                    user={user}
+                    onTaskClick={() => handleTaskClick(task.id)}
+                    onAcceptTask={null} 
+                    setRejectModalTaskId={null}
+                  />
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Right Column: Historical (Done/Rejected) */}
+        <div className="space-y-6">
+           <div className="bg-slate-50 rounded-xl border border-slate-200 overflow-hidden">
+             <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center">
+               <h3 className="font-bold text-slate-700 text-sm uppercase">Riwayat Selesai</h3>
+             </div>
+             <div className="divide-y divide-slate-200/50">
+                {stats.completed.slice(0, 5).map(task => (
+                   <TaskItem key={task.id} task={task} user={user} onTaskClick={() => handleTaskClick(task.id)} compact />
+                ))}
+                {stats.completed.length === 0 && <div className="p-6 text-center text-xs text-slate-400">Belum ada data.</div>}
+             </div>
+           </div>
         </div>
       </div>
 
@@ -320,7 +236,7 @@ export default function Dashboard({
         <CreateTaskModal
           user={user}
           onClose={() => setShowCreateModal(false)}
-          onSubmit={onAddTask}
+          onSubmit={handleCreateTask}
           currentTaskCount={tasks.length}
         />
       )}
@@ -329,12 +245,9 @@ export default function Dashboard({
         <RejectTaskModal
           taskId={rejectModalTaskId}
           onClose={() => setRejectModalTaskId(null)}
-          onConfirm={onRejectTask}
+          onConfirm={handleRejectConfirm}
         />
       )}
-      {/* {showLetterGen && (
-        <LetterGeneratorModal onClose={() => setShowLetterGen(false)} />
-      )} */}
     </div>
   );
 }

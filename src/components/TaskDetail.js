@@ -1,19 +1,32 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { useAppState } from '../context/AppStateContext'; 
 import { MessageSquare, Clock, CheckCircle, RotateCcw, Lock, RefreshCw, FileText, Paperclip, X, AlertCircle, XCircle, ArrowLeft } from 'lucide-react';
 import { formatDateTime } from '../utils/helpers';
 import { INITIAL_USERS, TEAMS } from '../data/mockData';
 
-export default function TaskDetail({
-  task,
-  currentUser,
-  onBack,
-  onAddComment = () => {},
-  onCloseTask = () => {},
-  onRequestReopen = () => {},
-  onReopenTask = () => {},
-  onAcceptTask = () => {},
-  onRejectTask = () => {}
-}) {
+export default function TaskDetail() {
+  const { taskId } = useParams(); // FIXED: Get ID from URL
+  const navigate = useNavigate();
+  
+  // FIXED: Get functions from context
+  const { 
+    user: currentUser, 
+    tasks, 
+    addComment, 
+    closeTask, 
+    requestReopen, 
+    reopenTask, 
+    acceptTask, 
+    rejectTask 
+  } = useAppState();
+
+  // Find the specific task
+  const task = useMemo(() => 
+    tasks.find(t => String(t.id) === String(taskId)), 
+    [tasks, taskId]
+  );
+
   const comments = task?.comments || [];
   const [commentText, setCommentText] = useState('');
   const [attachmentData, setAttachmentData] = useState(null);
@@ -24,8 +37,16 @@ export default function TaskDetail({
   const [showLeaderReopenModal, setShowLeaderReopenModal] = useState(false);
   const [leaderReopenNote, setLeaderReopenNote] = useState('');
   const fileInputRef = useRef(null);
-  const viewer = currentUser || { role: '', id: null, name: '' };
+
+  // --- Handlers ---
+  const handleBack = () => navigate('/dashboard');
+
+  if (!task) return <div className="p-8 text-center text-slate-500">Loading task...</div>;
+  if (!currentUser) return null;
+
+  const viewer = currentUser;
   const viewerInitial = viewer.name ? viewer.name.charAt(0).toUpperCase() : '?';
+
   const resetAttachment = () => {
     setAttachmentData(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -34,7 +55,7 @@ export default function TaskDetail({
   const handleSubmitComment = (e) => {
     e.preventDefault();
     if (!commentText.trim() && !attachmentData) return;
-    onAddComment(task.id, {
+    addComment(task.id, {
       text: commentText.trim(),
       attachment: attachmentData,
     });
@@ -62,21 +83,21 @@ export default function TaskDetail({
   };
 
   const handleCloseTaskConfirm = () => {
-    onCloseTask(task.id, closeNote.trim());
+    closeTask(task.id, closeNote.trim());
     setCloseNote('');
     setShowCloseConfirm(false);
   };
 
   const handleReopenRequestConfirm = () => {
     if (!reopenRequestNote.trim()) return;
-    onRequestReopen(task.id, reopenRequestNote.trim());
+    requestReopen(task.id, reopenRequestNote.trim());
     setReopenRequestNote('');
     setShowReopenRequestModal(false);
   };
 
   const handleLeaderReopenConfirm = () => {
     if (!leaderReopenNote.trim()) return;
-    onReopenTask(task.id, leaderReopenNote.trim());
+    reopenTask(task.id, leaderReopenNote.trim());
     setLeaderReopenNote('');
     setShowLeaderReopenModal(false);
   };
@@ -97,7 +118,7 @@ export default function TaskDetail({
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
       <div className="border-b border-gray-100 p-6">
         <button
-          onClick={onBack}
+          onClick={handleBack}
           className="text-sm text-slate-500 hover:text-blue-600 mb-4 inline-flex items-center gap-2 font-medium"
         >
           <ArrowLeft className="w-4 h-4" />
@@ -222,11 +243,11 @@ export default function TaskDetail({
                       <AlertCircle className="w-8 h-8 text-blue-500" />
                       <div><p className="font-bold text-slate-800">Menunggu Konfirmasi Anda</p><p className="text-sm text-slate-500">Anda harus menerima atau menolak pekerjaan ini sebelum dapat memulai diskusi.</p></div>
                       <div className="flex gap-3 mt-2">
-                        <button onClick={() => onAcceptTask(task.id)} className="flex items-center gap-1 bg-green-600 hover:bg-green-700 text-white text-sm font-bold px-4 py-2 rounded-lg transition-colors"><CheckCircle className="w-4 h-4" /> Terima</button>
-                        <button onClick={() => onRejectTask(task.id)} className="flex items-center gap-1 bg-white border border-red-200 text-red-600 hover:bg-red-50 text-sm font-bold px-4 py-2 rounded-lg transition-colors"><XCircle className="w-4 h-4" /> Tolak</button>
+                        <button onClick={() => acceptTask(task.id)} className="flex items-center gap-1 bg-green-600 hover:bg-green-700 text-white text-sm font-bold px-4 py-2 rounded-lg transition-colors"><CheckCircle className="w-4 h-4" /> Terima</button>
+                        <button onClick={() => rejectTask(task.id)} className="flex items-center gap-1 bg-white border border-red-200 text-red-600 hover:bg-red-50 text-sm font-bold px-4 py-2 rounded-lg transition-colors"><XCircle className="w-4 h-4" /> Tolak</button>
                       </div>
                       <button
-                        onClick={onBack}
+                        onClick={handleBack}
                         className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-blue-600"
                       >
                         <ArrowLeft className="w-4 h-4" />
@@ -320,7 +341,7 @@ export default function TaskDetail({
           </dl>
         </div>
       </div>
-      {/* Modals */}
+      {/* Modals are the same... */}
       {showCloseConfirm && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 space-y-4">
