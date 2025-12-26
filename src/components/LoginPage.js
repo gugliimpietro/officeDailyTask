@@ -1,19 +1,18 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAppState } from '../context/AppStateContext';
-import { Briefcase, Mail, Lock, ChevronLeft, Loader2 } from 'lucide-react';
+import { Briefcase, ChevronLeft, Loader2, AlertCircle } from 'lucide-react'; // Removed Mail, Lock
 
 export default function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login, isLoading } = useAppState(); // Get login and loading state from context
+  const { login, isLoading } = useAppState();
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [mode, setMode] = useState('login'); 
   const [error, setError] = useState('');
   
-  // Get redirect path or default to dashboard
   const from = location.state?.from?.pathname || "/dashboard";
 
   const handleSignIn = async (e) => {
@@ -36,7 +35,6 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4 relative overflow-hidden">
-      {/* Background Decor */}
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
         <div className="absolute top-10 left-10 w-64 h-64 bg-blue-600/20 rounded-full blur-3xl mix-blend-screen animate-pulse"></div>
         <div className="absolute bottom-10 right-10 w-96 h-96 bg-indigo-600/20 rounded-full blur-3xl mix-blend-screen"></div>
@@ -102,7 +100,6 @@ export default function LoginPage() {
              </div>
            </form>
         ) : (
-          /* Recovery Mode */
           <div className="space-y-4">
              <div className="bg-blue-50 text-blue-800 p-4 rounded-xl text-sm border border-blue-100">
                Hubungi Administrator IT untuk mereset password Anda.
@@ -116,7 +113,6 @@ export default function LoginPage() {
           </div>
         )}
 
-        {/* Demo Credentials Footer */}
         <div className="mt-8 border-t border-slate-100 pt-6">
           <p className="text-xs text-center text-slate-400 mb-3 uppercase tracking-wider font-semibold">Demo Accounts</p>
           <div className="grid grid-cols-3 gap-2 text-center text-xs">
@@ -142,12 +138,5 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
-  );
-}
-
-// Helper icon
-function AlertCircle({ className }) {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>
   );
 }
