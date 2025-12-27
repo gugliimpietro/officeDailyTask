@@ -1,9 +1,44 @@
 // src/public/letterGen/main.js
 
+// --- OneDrive Path Helper (Ported from src/lib/onedrive/paths.js) ---
+const PathKind = {
+  TEMPLATE: "template",
+  GENERATED: "generated",
+};
+
+class OneDrivePathHelper {
+  static getOnedrivePath({ folderKey, username, pathKind }) {
+    if (!folderKey) throw new Error("folderKey is required");
+    if (!pathKind) throw new Error("pathKind is required");
+
+    switch (pathKind) {
+      case PathKind.TEMPLATE:
+        // Physical path in OneDrive
+        return `aplikasi progres/templates/${folderKey}`;
+      case PathKind.GENERATED:
+        if (!username) throw new Error("username is required for generated paths");
+        return `aplikasi progres/generated/${username}/${folderKey}`;
+      default:
+        throw new Error(`Unknown pathKind: ${pathKind}`);
+    }
+  }
+
+  // Helper to normalize segments (trim, lowercase, remove special chars)
+  // Matching the logic from your seed script
+  static normalize(text) {
+    return String(text || "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, " ") // Single spaces
+      .replace(/[^\w\s\-]/g, ""); // Remove special chars but keep spaces/dashes
+  }
+}
+
 class LetterGenerator {
   constructor() {
     this.formData = {};
     this.isGenerating = false;
+    this.currentUser = { username: "guest" }; // Default, should be set via init
     this.init().catch((err) => console.error("Init error:", err));
   }
 
@@ -11,7 +46,6 @@ class LetterGenerator {
   safeAnime(config) {
     try {
       if (window.anime) return window.anime(config);
-      
       // Fallback
       const targets = config?.targets;
       const applyWidth = config?.width;
@@ -26,6 +60,7 @@ class LetterGenerator {
   }
 
   async init() {
+    // Try to get user info if passed from parent window
     this.initializeUI();
     this.fallbackFacilitators = typeof facilitators !== "undefined" && Array.isArray(facilitators) ? facilitators.slice() : [];
     this.facilitators = [];
@@ -82,6 +117,9 @@ class LetterGenerator {
     addListener("previewBtn", "click", () => this.handlePreview());
     addListener("closeSuccessBtn", "click", () => this.closeSuccessModal());
     addListener("downloadBtn", "click", () => this.handleDownload());
+    
+    // NEW: Send to Task Button
+    addListener("sendToTaskBtn", "click", () => this.handleSendToTask());
 
     document.querySelectorAll("input, select, textarea").forEach((input) => {
       input.addEventListener("change", () => this.saveFormState());
@@ -90,7 +128,7 @@ class LetterGenerator {
     });
   }
 
-  // --- Handlers (Simplified for brevity, logic remains same) ---
+  // --- Handlers ---
   handleJenisSuratChange(e) {
     const val = e.target.value;
     if (val === "Kurikulum Silabus") { this.showSection(document.getElementById("curriculumSection")); this.hideSection(document.getElementById("btsSection")); }
@@ -212,6 +250,7 @@ class LetterGenerator {
     if(url && key && window.supabase) this.supabase = window.supabase.createClient(url, key);
     return this.supabase;
   }
+  
   async refreshFacilitatorsFromSupabase() {
     try {
       const client = await this.getSupabaseClient(); if(!client) return false;
@@ -220,38 +259,136 @@ class LetterGenerator {
     } catch(e) { console.warn("Supabase fetch failed", e); }
     return false;
   }
+/**
+   * Downloads a file from OneDrive sharing link
+   * Converts the sharing URL to use OneDrive API which supports CORS
+   */
+  async downloadFileFromUrl(url) {
+    // Validate URL exists
+    if (!url) {
+      throw new Error("URL template kosong.");
+    }
 
-  // --- DOCX PAYLOAD BUILDER (UPDATED) ---
+    // Check for truncated links (common copy-paste error)
+    if (url.endsWith("...") || url.includes("…")) {
+      throw new Error("URL terpotong. Pastikan Anda menyalin link lengkap dari OneDrive.");
+    }
+
+    console.log("[OneDrive] Memproses link:", url);
+
+    try {
+      // Step 1: Clean the URL (remove query parameters like ?e=xyz)
+      const cleanUrl = url.split('?')[0];
+      console.log("[OneDrive] Clean URL:", cleanUrl);
+
+      // Step 2: Encode URL to Base64 (URL-safe format for OneDrive API)
+      let encodedUrl = btoa(cleanUrl)
+        .replace(/\//g, '_')  // Replace / with _
+        .replace(/\+/g, '-')  // Replace + with -
+        .replace(/=+$/, '');  // Remove trailing =
+
+      // Step 3: Build OneDrive API endpoint (supports CORS)
+      const apiUrl = `https://api.onedrive.com/v1.0/shares/u!${encodedUrl}/root/content`;
+      console.log("[OneDrive] Mengunduh via API:", apiUrl);
+
+      // Step 4: Fetch file from API
+      const response = await fetch(apiUrl);
+
+      // Handle errors with friendly messages
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          throw new Error("Akses ditolak. Pastikan link OneDrive diset ke 'Anyone with the link can view'.");
+        }
+        if (response.status === 404) {
+          throw new Error("File tidak ditemukan. Periksa kembali link OneDrive Anda.");
+        }
+        throw new Error(`Gagal mengunduh file (HTTP ${response.status})`);
+      }
+
+      // Success! Return file as blob
+      const blob = await response.blob();
+      console.log("[OneDrive] File berhasil diunduh:", blob.size, "bytes");
+      return blob;
+
+    } catch (error) {
+      console.error("[OneDrive] Error:", error);
+      throw new Error(`Gagal mengunduh template: ${error.message}`);
+    }
+  }
+  // --- LOGICAL KEY GENERATION (Matches seed-storage-folders.mjs) ---
+  
+  /**
+   * Generates the 'folder_key' that corresponds to the logical path in OneDrive.
+   * Matches logic: undangan/kurikulum_silabus/eksternal/kpk/persiapan pelatihan/individu
+   */
+  generateFolderKey(d) {
+    const normalize = OneDrivePathHelper.normalize;
+
+    const sifat = normalize(d.sifatSurat); // 'undangan' or 'hasil'
+    const jenis = normalize(d.jenisSurat).replace(/ /g, "_"); // 'kurikulum_silabus'
+    
+    // Lingkup
+    let lingkup = "internal";
+    if (d.lingkupInternal && d.lingkupEksternal) lingkup = "eksternal"; // or gabungan based on your seed? Seed says "eksternal" usually covers mixes, or explicit. 
+    // Seed paths uses: 'eksternal', 'internal'
+    else if (d.lingkupEksternal) lingkup = "eksternal";
+
+    // Varian
+    let varian = "individu";
+    if (d.varianPenugasan) varian = "penugasan";
+    else if (d.varianKelompok) varian = "kelompok";
+
+    // Build parts array
+    let parts = [sifat, jenis, lingkup];
+
+    if (d.jenisSurat === "Kurikulum Silabus") {
+        if (d.jenisKurikulum) parts.push(normalize(d.jenisKurikulum)); // 'kpk', 'ecp', 'jasa perdagangan'
+        
+        // Sub-variant (Program/Tahap)
+        // Your seed paths have 'persiapan pelatihan' or 'review'
+        // We map form fields to these keys.
+        // Assuming 'perihalKPK' or 'tahapECP' maps to this level.
+        if (d.jenisKurikulum === "KPK" && d.perihalKPK) {
+            parts.push(normalize(d.perihalKPK)); 
+        } else if (d.jenisKurikulum === "ECP" && d.tahapECP) {
+            parts.push(normalize(d.tahapECP));
+        } else if (d.jenisKurikulum === "Jasa Perdagangan") {
+            // Logic for Jasa Perdagangan sub-path if needed, or default
+            // Seed has: 'persiapan pelatihan', 'review'
+            // We use 'perihalKPK' field as a generic 'Subject' field if visible
+            if (this.isFieldVisible('perihalKPK')) parts.push(normalize(d.perihalKPK));
+        }
+    }
+
+    parts.push(varian);
+
+    // Join with slash
+    return parts.join("/");
+  }
+
+
+  // --- DOCX PAYLOAD BUILDER ---
   buildDocxPayload(formData) {
     const safe = (v) => (v == null ? "" : String(v));
-
-    // 1. Calculate Date fields
     const monthMap = {
       "Januari": "01", "Februari": "02", "Maret": "03", "April": "04", "Mei": "05", "Juni": "06",
       "Juli": "07", "Agustus": "08", "September": "09", "Oktober": "10", "November": "11", "Desember": "12"
     };
     const bulan = safe(formData.bulanSurat);
     const bulanAngka = monthMap[bulan] || "";
-
-    // Format Hari, Tanggal (e.g., "Senin, 25 Desember 2025")
     let hariTanggal = "";
     if (formData.tanggalPelaksanaan) {
       try {
         const d = new Date(formData.tanggalPelaksanaan);
-        hariTanggal = new Intl.DateTimeFormat('id-ID', { 
-            weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' 
-        }).format(d);
+        hariTanggal = new Intl.DateTimeFormat('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(d);
       } catch (e) { hariTanggal = formData.tanggalPelaksanaan; }
     }
 
     return {
-      // NEW: Calculated fields for your template
       bulan_angka: bulanAngka,
       bulan_huruf: bulan,
       hari_tanggal: hariTanggal,
-      waktu: safe(formData.waktuPelaksanaan), // Maps to [waktu]
-      
-      // Existing fields
+      waktu: safe(formData.waktuPelaksanaan),
       jenis_surat: safe(formData.jenisSurat),
       sifat_surat: safe(formData.sifatSurat),
       bulan_surat: bulan,
@@ -285,32 +422,47 @@ class LetterGenerator {
     this.showLoadingModal();
     try {
       const formData = this.collectFormData();
-      this.generatedFilename = this.generateFilename(formData);
-      const payload = this.buildDocxPayload(formData);
-      
-      // 1. Get Template
-      let blob = null;
-      const keys = this.deriveTemplateKeys(formData);
-      const candidates = await this.fetchTemplateCandidates(keys);
-      const row = this.selectBestTemplate(candidates, keys);
+      const folderKey = this.generateFolderKey(formData);
+      console.log("[Generator] Derived Folder Key:", folderKey);
 
-      if(row) {
-        console.log("Using DB Template:", row.storage_path);
-        blob = await this.downloadTemplateBlob({bucket: row.bucket||"letter-templates", path: row.storage_path});
+      // 1. Get Template Link from Supabase DB (Metadata)
+      // New Logic: We query the DB for the folderKey to get the 'share_url' or 'download_url'
+      const templateMetadata = await this.fetchTemplateMetadata(folderKey);
+      
+      let blob = null;
+      if (templateMetadata && templateMetadata.share_url) {
+          console.log("[Generator] Downloading from OneDrive link:", templateMetadata.share_url);
+          blob = await this.downloadFileFromUrl(templateMetadata.share_url);
       } else {
-        // Fallback
-        const path = this.buildStorageTemplatePath(formData);
-        console.log("Using Fallback Path:", path.path);
-        blob = await this.downloadTemplateBlob(path);
+          throw new Error(`Template not found for key: ${folderKey}. Check Supabase Metadata.`);
       }
 
-      // 2. Render
+      // 2. Render DOCX
+      const payload = this.buildDocxPayload(formData);
       await this.ensureDocxLibsLoaded();
       const renderedBlob = this.renderDocx(await blob.arrayBuffer(), payload);
 
-      // 3. Upload & Open
-      const up = await this.uploadGeneratedDocx(renderedBlob, this.generatedFilename);
-      await this.openGenerated(up.bucket, up.path);
+      // 3. Handle Generated File (OneDrive Path Concept)
+      // Since we can't upload to OneDrive without Graph Auth in this iframe,
+      // we generate the correct OneDrive PATH and download the file locally.
+      // The user manually uploads it, or we integrate Graph API later.
+      
+      const username = this.currentUser.username || "user";
+      const targetPath = OneDrivePathHelper.getOnedrivePath({ 
+          folderKey, 
+          username, 
+          pathKind: PathKind.GENERATED 
+      });
+      
+      const filename = `surat_generated_${Date.now()}.docx`;
+      console.log(`[Generator] Target OneDrive Path: ${targetPath}/${filename}`);
+      
+      // Trigger download
+      window.saveAs(renderedBlob, filename);
+      
+      this.generatedFileUrl = null; // No cloud URL available yet
+      this.generatedFilename = filename;
+      
       this.showSuccessModal();
 
     } catch(e) {
@@ -322,61 +474,40 @@ class LetterGenerator {
     }
   }
 
-  // Helpers for generation
-  deriveTemplateKeys(d) {
-    const eksternal = !!d.lingkupEksternal;
-    const varian = d.varianPenugasan ? "Penugasan" : d.varianKelompok ? "Kelompok" : d.varianIndividu ? "Individu" : "";
-    return {
-      lingkup: eksternal ? "Eksternal" : "Internal",
-      varian_surat: varian,
-      jenis_surat: d.jenisSurat||"",
-      jenis_kurikulum: (d.jenisSurat==="Kurikulum Silabus" ? d.jenisKurikulum||"" : null)
-    };
+  // --- NEW: Fetch Metadata from DB ---
+  async fetchTemplateMetadata(folderKey) {
+      const client = await this.getSupabaseClient();
+      if (!client) return null;
+      
+      // We assume a table 'letter_templates' with columns: folder_key, share_url
+      const { data, error } = await client
+        .from('letter_templates')
+        .select('*')
+        .eq('folder_key', folderKey)
+        .limit(1)
+        .single();
+      
+      if (error) {
+          console.warn("[Generator] Metadata fetch error:", error.message);
+          return null;
+      }
+      return data;
   }
-  async fetchTemplateCandidates(keys) {
-    const client = await this.getSupabaseClient(); if(!client) return [];
-    const { data } = await client.from(window.SUPABASE_LETTER_TEMPLATES_TABLE||"letter_templates")
-      .select("*").eq("is_active", true).order("priority", {ascending:false});
-    return (data||[]).filter(t => 
-      (t.lingkup==null||t.lingkup===keys.lingkup) && (t.varian_surat==null||t.varian_surat===keys.varian_surat) &&
-      (t.jenis_surat==null||t.jenis_surat===keys.jenis_surat) && (t.jenis_kurikulum==null||t.jenis_kurikulum===keys.jenis_kurikulum)
-    );
+
+  async downloadFileFromUrl(url) {
+      // Note: If OneDrive link is not direct download, this fetch might fail or return HTML.
+      // Ensure the link in Supabase is a direct download link (e.g., ends in ?download=1)
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error("Failed to download template file");
+      return await resp.blob();
   }
-  selectBestTemplate(candidates, keys) {
-    if(!candidates?.length) return null;
-    let best=null, maxScore=-9999;
-    candidates.forEach(row => {
-      let s = 0;
-      ["lingkup","varian_surat","jenis_surat","jenis_kurikulum"].forEach(k => {
-         if(row[k]===keys[k]) s+=10; else if(row[k]==null) s+=1; else s=-1000;
-      });
-      if(s > maxScore) { maxScore=s; best=row; }
-    });
-    return best;
-  }
-  async downloadTemplateBlob({bucket, path}) {
-    const client = await this.getSupabaseClient();
-    const {data, error} = await client.storage.from(bucket).download(path);
-    if(error) throw error; return data;
-  }
+
+  // --- HELPERS ---
   renderDocx(buf, data) {
     const zip = new window.PizZip(buf);
     const doc = new window.docxtemplater(zip, { paragraphLoop:true, linebreaks:true, delimiters:{start:"[", end:"]"} });
     doc.render(data);
     return doc.getZip().generate({type:"blob", mimeType:"application/vnd.openxmlformats-officedocument.wordprocessingml.document"});
-  }
-  async uploadGeneratedDocx(blob, filename) {
-    const client = await this.getSupabaseClient();
-    const ts = new Date();
-    const path = `generated/${ts.getFullYear()}/${ts.getMonth()+1}/${Date.now()}_${filename}`;
-    const {error} = await client.storage.from("generated-letters").upload(path, blob, {upsert:true});
-    if(error) throw error; return {bucket:"generated-letters", path};
-  }
-  async openGenerated(bucket, path) {
-    const client = await this.getSupabaseClient();
-    const {data} = await client.storage.from(bucket).createSignedUrl(path, 3600);
-    if(data?.signedUrl) window.open(`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(data.signedUrl)}`, "_blank");
-    else throw new Error("URL generation failed");
   }
 
   // --- UTILS ---
@@ -389,6 +520,7 @@ class LetterGenerator {
     await load("https://cdn.jsdelivr.net/npm/docxtemplater@3.50.0/build/docxtemplater.js");
     await load("https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js");
   }
+
   collectFormData() {
     const d = {};
     const get = (id) => this.isFieldVisible(id) ? document.getElementById(id).value : "";
@@ -419,11 +551,8 @@ class LetterGenerator {
     if(!document.getElementById("lingkupInternal").checked && !document.getElementById("lingkupEksternal").checked) { alert("Pilih lingkup!"); valid=false; }
     return valid;
   }
-  getRequiredFields() { return ["jenisSurat","sifatSurat","bulanSurat","tanggalPelaksanaan"].filter(id => this.isFieldVisible(id)); } // Simplified for brevity
+  getRequiredFields() { return ["jenisSurat","sifatSurat","bulanSurat","tanggalPelaksanaan"].filter(id => this.isFieldVisible(id)); }
   showFieldError(id, msg) { const e=document.getElementById(`${id}Error`); if(e) { e.textContent=msg; e.classList.add("show"); } }
-  
-  generateFilename(d) { return `surat_${d.jenisSurat}_${Date.now()}.docx`.replace(/\s/g,"_"); }
-  buildStorageTemplatePath(d) { return { bucket:"letter-templates", path: `temp_letter_${d.lingkupEksternal?"eksternal":"internal"}.docx` }; } // Fallback
   
   populateTimeSlots() { 
     const el=document.getElementById("waktuPelaksanaan"); if(!el) return;
@@ -446,7 +575,14 @@ class LetterGenerator {
     });
   }
   
-  // Modals & Charts (Stubs to keep it running)
+  handleSendToTask() {
+      // NOTE: With OneDrive storage via local download, we don't have a URL to send immediately unless uploaded.
+      // For now, prompt user.
+      this.showNotification("File diunduh. Silakan upload manual ke tugas.", "info");
+      this.closeSuccessModal();
+  }
+  handleDownload() { this.closeSuccessModal(); }
+
   showLoadingModal() { document.getElementById("loadingModal")?.classList.remove("hidden"); }
   hideLoadingModal() { document.getElementById("loadingModal")?.classList.add("hidden"); }
   showSuccessModal() { document.getElementById("successModal")?.classList.remove("hidden"); }
