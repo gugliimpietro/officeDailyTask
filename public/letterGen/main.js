@@ -10,6 +10,7 @@ class LetterGenerator {
     this.init().catch((err) => console.error("Init error:", err));
   }
 
+  // --- ANIMATION HELPER ---
   safeAnime(config) {
     try {
       if (window.anime) return window.anime(config);
@@ -25,6 +26,7 @@ class LetterGenerator {
     return null;
   }
 
+  // --- INITIALIZATION ---
   async init() {
     this.initializeUI();
     this.fallbackFacilitators = typeof facilitators !== "undefined" && Array.isArray(facilitators) ? facilitators.slice() : [];
@@ -34,7 +36,6 @@ class LetterGenerator {
     this.initializeCharts();
     this.startParticleAnimation();
     
-    // RESTORED: Populate the Select Dropdown for 30-min intervals
     this.populateTimeSlots();
 
     this.populateFacilitators({ loading: true });
@@ -62,6 +63,7 @@ class LetterGenerator {
       if (el) el.addEventListener(event, handler);
     };
 
+    // Form Change Listeners
     addListener("jenisSurat", "change", (e) => this.handleJenisSuratChange(e));
     addListener("sifatSurat", "change", (e) => this.handleSifatSuratChange(e));
     addListener("jenisKurikulum", "change", (e) => this.handleJenisKurikulumChange(e));
@@ -79,17 +81,18 @@ class LetterGenerator {
     addListener("jumlahFasilitator", "change", (e) => this.handleJumlahFasilitatorChange(e));
     [1, 2, 3].forEach(i => addListener(`namaFasilitator${i}`, "change", (e) => this.handleFasilitatorChange(e, i)));
 
-    // MAIN FORM BUTTONS
+    // Buttons
     addListener("generateBtn", "click", () => this.handleGenerate());
     addListener("resetBtn", "click", () => this.handleReset());
-    addListener("formPreviewBtn", "click", () => alert("Pilih Generate Surat terlebih dahulu untuk melihat preview."));
+    addListener("formPreviewBtn", "click", () => alert("Klik 'Generate Surat' terlebih dahulu."));
 
-    // SUCCESS MODAL BUTTONS (UPDATED IDS)
+    // Modal Buttons (Ensure IDs match index.html)
     addListener("modalPreviewBtn", "click", () => this.handlePreview()); 
     addListener("modalSendBtn", "click", () => this.handleSendToTask());
     addListener("modalDownloadBtn", "click", () => this.handleDownload());
     addListener("closeSuccessBtn", "click", () => this.closeSuccessModal());
 
+    // Validation
     document.querySelectorAll("input, select, textarea").forEach((input) => {
       input.addEventListener("change", () => this.saveFormState());
       input.addEventListener("input", () => this.saveFormState());
@@ -97,7 +100,7 @@ class LetterGenerator {
     });
   }
 
-  // --- Handlers ---
+  // --- HANDLERS ---
   handleJenisSuratChange(e) {
     const val = e.target.value;
     if (val === "Kurikulum Silabus") { this.showSection(document.getElementById("curriculumSection")); this.hideSection(document.getElementById("btsSection")); }
@@ -117,7 +120,6 @@ class LetterGenerator {
     const tgs = document.getElementById("varianPenugasan").checked;
     const numSec = document.getElementById("jumlahFasilitatorSection");
     const instSec = document.getElementById("institutionSection");
-    
     if(grp) this.showSection(numSec); else this.hideSection(numSec);
     if(tgs || grp) this.showSection(instSec); else this.hideSection(instSec);
     this.updateFacilitatorFields();
@@ -187,18 +189,16 @@ class LetterGenerator {
     const hideMitraTopik = js==="Bahan Tayang Standar" || (js==="Kurikulum Silabus" && jk==="ECP");
     this.setFieldVisible("mitraKerjasama", !hideMitraTopik);
     this.setFieldVisible("topikRapat", !hideMitraTopik);
-    
     this.setFieldVisible("pimpinan", varianPenugasan);
     this.setFieldVisible("instansi", varianPenugasan);
 
     const fs = document.getElementById("facilitatorSection");
     if(fs) {
-       // Ensure facilitator section (and thus Variant checkbox) is visible if type is selected
        if (js && js !== "") this.showSection(fs); else this.hideSection(fs);
     }
   }
 
-  // --- SUPABASE & DATA ---
+  // --- SUPABASE ---
   async getSupabaseClient() {
     if(this.supabase) return this.supabase;
     if(!window.supabase && !document.querySelector('script[data-supabase-js]')) {
@@ -212,7 +212,6 @@ class LetterGenerator {
     if(url && key && window.supabase) this.supabase = window.supabase.createClient(url, key);
     return this.supabase;
   }
-  
   async refreshFacilitatorsFromSupabase() {
     try {
       const client = await this.getSupabaseClient(); if(!client) return false;
@@ -234,7 +233,6 @@ class LetterGenerator {
       this.showFieldError(fieldId, `Wajib diisi`);
       return false;
     }
-    // Date Logic
     if (fieldId === "tanggalPelaksanaan" && value) {
       const selected = new Date(value);
       const today = new Date(); today.setHours(0,0,0,0);
@@ -251,7 +249,15 @@ class LetterGenerator {
     this.getRequiredFields().forEach(id => {
        if(!this.validateField(document.getElementById(id))) valid=false;
     });
-    if(!document.getElementById("lingkupInternal").checked && !document.getElementById("lingkupEksternal").checked) { alert("Pilih lingkup!"); valid=false; }
+    if(!document.getElementById("lingkupInternal").checked && !document.getElementById("lingkupEksternal").checked) { 
+        alert("Pilih lingkup (Internal/Eksternal)!"); 
+        valid=false; 
+    }
+    const varianChecked = ["varianIndividu","varianPenugasan","varianKelompok"].some(id => document.getElementById(id).checked);
+    if(!varianChecked) {
+        alert("Pilih minimal satu Varian Surat!");
+        valid=false;
+    }
     return valid;
   }
 
@@ -279,7 +285,7 @@ class LetterGenerator {
 
   showFieldError(id, msg) { const e=document.getElementById(`${id}Error`); if(e) { e.textContent=msg; e.classList.add("show"); } }
 
-  // --- FOLDER KEY & GENERATION ---
+  // --- KEY GENERATION ---
   generateFolderKey(d) {
     const normalize = (text) => String(text || "").trim().toLowerCase().replace(/\s+/g, " ").replace(/[^\w\s\-]/g, "");
     const sifat = normalize(d.sifatSurat);
@@ -347,6 +353,7 @@ class LetterGenerator {
     };
   }
 
+  // --- GENERATION LOGIC ---
   async handleGenerate() {
     if(this.isGenerating) return;
     if(!this.validateForm()) { this.showNotification("Lengkapi form!", "error"); return; }
@@ -364,7 +371,7 @@ class LetterGenerator {
       if (templateMetadata && templateMetadata.share_url) {
           blob = await this.downloadFileFromUrl(templateMetadata.share_url);
       } else {
-          throw new Error(`Template not found for key: ${folderKey}. Check Supabase.`);
+          throw new Error(`Template not found for key: ${folderKey}`);
       }
 
       const payload = this.buildDocxPayload(formData);
@@ -374,7 +381,7 @@ class LetterGenerator {
       this.generatedBlob = renderedBlob;
       this.generatedFilename = `surat_generated_${Date.now()}.docx`;
       
-      this.showSuccessModal();
+      this.showSuccessModal(); 
 
     } catch(e) {
       console.error(e);
@@ -385,31 +392,49 @@ class LetterGenerator {
     }
   }
 
+  // --- MULTI-STRATEGY DOWNLOADER ---
   async downloadFileFromUrl(url) {
       if (!url) throw new Error("URL template kosong.");
       console.log("[Generator] Processing Link:", url);
 
-      // Google Drive
+      // Google Drive Logic with Fallbacks
       if (url.includes("docs.google.com") || url.includes("drive.google.com")) {
           const match = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
           if (match && match[1]) {
-              const exportUrl = `https://docs.google.com/document/d/${match[1]}/export?format=docx`;
-              const resp = await fetch(exportUrl);
-              if (!resp.ok) throw new Error("Gagal export Google Docs. Pastikan akses Public aktif.");
-              return await resp.blob();
+              const fileId = match[1];
+              const exportUrl = `https://docs.google.com/document/d/${fileId}/export?format=docx`;
+              
+              // Strategy 1: AllOrigins (Often reliable for binary)
+              try {
+                  const proxyUrl1 = `https://api.allorigins.win/raw?url=${encodeURIComponent(exportUrl)}`;
+                  console.log("[Generator] Trying Proxy 1:", proxyUrl1);
+                  const resp1 = await fetch(proxyUrl1);
+                  if (resp1.ok) return await resp1.blob();
+              } catch (e) { console.warn("Proxy 1 failed", e); }
+
+              // Strategy 2: CorsProxy.io (Backup)
+              try {
+                  const proxyUrl2 = `https://corsproxy.io/?${encodeURIComponent(exportUrl)}`;
+                  console.log("[Generator] Trying Proxy 2:", proxyUrl2);
+                  const resp2 = await fetch(proxyUrl2);
+                  if (resp2.ok) return await resp2.blob();
+              } catch (e) { console.warn("Proxy 2 failed", e); }
+
+              throw new Error("Gagal download template. Pastikan Google Doc 'Public' (Anyone with link).");
           }
       }
-      // OneDrive API
+      
+      // Fallback for OneDrive/Direct
       if (url.includes("1drv.ms") || url.includes("onedrive.live.com")) {
           const cleanUrl = url.split('?')[0];
-          let encodedUrl = btoa(cleanUrl);
-          encodedUrl = encodedUrl.replace(/\//g, '_').replace(/\+/g, '-').replace(/=+$/, '');
+          let encodedUrl = btoa(cleanUrl).replace(/\//g, '_').replace(/\+/g, '-').replace(/=+$/, '');
           const apiUrl = `https://api.onedrive.com/v1.0/shares/u!${encodedUrl}/root/content`;
           try {
              const resp = await fetch(apiUrl);
              if (resp.ok) return await resp.blob();
           } catch (e) { console.warn("OneDrive API failed, trying direct..."); }
       }
+
       // Direct
       try {
           const resp = await fetch(url);
@@ -470,7 +495,7 @@ class LetterGenerator {
     return d;
   }
 
-  // --- BUTTON HANDLERS ---
+  // --- BUTTON ACTIONS ---
   handleDownload() {
       if (this.generatedBlob && this.generatedFilename) {
           window.saveAs(this.generatedBlob, this.generatedFilename);
@@ -504,17 +529,23 @@ class LetterGenerator {
       };
   }
 
-  // --- RESTORED: Populate Time Slots (07:00, 07:30...) ---
+  // --- POPULATE TIME SLOTS (07:00, 07:30...) ---
   populateTimeSlots() {
     const el = document.getElementById("waktuPelaksanaan");
     if (el && el.tagName === 'SELECT') {
         el.innerHTML = '<option value="">-- Pilih Waktu --</option>';
-        for(let h=7; h<=20; h++) for(let m=0; m<60; m+=30) {
-          const t = `${h.toString().padStart(2,"0")}:${m.toString().padStart(2,"0")}`;
-          const o=document.createElement("option"); o.value=t; o.textContent=t; el.appendChild(o);
+        for(let h=7; h<=20; h++) {
+            ['00', '30'].forEach(m => {
+                const time = `${h.toString().padStart(2, '0')}:${m}`;
+                const option = document.createElement("option");
+                option.value = time;
+                option.textContent = time;
+                el.appendChild(option);
+            });
         }
     }
   }
+
   populateFacilitators(opts={}) {
     [1,2,3].forEach(i => {
       const el=document.getElementById(`namaFasilitator${i}`); if(!el) return;
