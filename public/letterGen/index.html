@@ -3,15 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Generator Surat Template - Aplikasi Pembuatan Surat Formal</title>
-
-    <!-- Fonts -->
-    <link
-      href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
-      rel="stylesheet"
-    />
-
-    <!-- Core Libraries -->
+    <title>Generator Surat Template</title>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/typed.js/2.0.12/typed.min.js"></script>
@@ -19,334 +12,82 @@
     <script src="https://cdn.jsdelivr.net/npm/@splidejs/splide@4.1.4/dist/js/splide.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.7.0/p5.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.3/dist/umd/supabase.js"></script>
-    <link
-      rel="stylesheet"
-      href="https://unpkg.com/splitting@1.0.6/dist/splitting.css"
-    />
+    <script src="https://cdn.jsdelivr.net/npm/pizzip@3.1.7/dist/pizzip.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.50.0/build/docxtemplater.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+    
+    <link rel="stylesheet" href="https://unpkg.com/splitting@1.0.6/dist/splitting.css" />
     <script src="https://unpkg.com/splitting@1.0.6/dist/splitting.min.js"></script>
 
     <style>
-      :root {
-        --primary-navy: #1a365d;
-        --secondary-gray: #4a5568;
-        --accent-gold: #d69e2e;
-        --bg-off-white: #fafafa;
-        --success-green: #276749;
-        --error-burgundy: #c53030;
-        --border-light: #e2e8f0;
-      }
-
-      body {
-        font-family: "Inter", sans-serif;
-        background-color: var(--bg-off-white);
-        background-image: radial-gradient(
-          circle at 1px 1px,
-          rgba(74, 85, 104, 0.05) 1px,
-          transparent 0
-        );
-        background-size: 20px 20px;
-      }
-
-      .font-display {
-        font-family: "Playfair Display", serif;
-      }
-      .font-mono {
-        font-family: "JetBrains Mono", monospace;
-      }
-
-      .hero-bg {
-        background: linear-gradient(
-          135deg,
-          var(--primary-navy) 0%,
-          var(--secondary-gray) 100%
-        );
-        position: relative;
-        overflow: hidden;
-      }
-
-      .form-card {
-        background: white;
-        border-radius: 12px;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-        border: 1px solid var(--border-light);
-        transition: all 0.3s ease;
-      }
-
-      .form-card:hover {
-        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
-      }
-
-      .form-section {
-        border-left: 4px solid var(--accent-gold);
-        padding-left: 1.5rem;
-        margin-bottom: 2rem;
-      }
-
-      .form-control {
-        border: 2px solid var(--border-light);
-        border-radius: 8px;
-        padding: 0.75rem 1rem;
-        font-size: 1rem;
-        transition: all 0.3s ease;
-        background-color: white;
-      }
-
-      .form-control:focus {
-        outline: none;
-        border-color: var(--accent-gold);
-        box-shadow: 0 0 0 3px rgba(214, 158, 46, 0.1);
-      }
-
-      .form-control:disabled {
-        background-color: #f7fafc;
-        color: #a0aec0;
-        cursor: not-allowed;
-      }
-
-      .btn-primary {
-        background: linear-gradient(
-          135deg,
-          var(--accent-gold) 0%,
-          #b7791f 100%
-        );
-        color: white;
-        padding: 0.875rem 2rem;
-        border-radius: 8px;
-        font-weight: 600;
-        border: none;
-        cursor: pointer;
-        transition: all 0.3s ease;
-        box-shadow: 0 4px 15px rgba(214, 158, 46, 0.3);
-      }
-
-      .btn-primary:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 20px rgba(214, 158, 46, 0.4);
-      }
-
-      .btn-secondary {
-        background: white;
-        color: var(--secondary-gray);
-        border: 2px solid var(--border-light);
-        padding: 0.875rem 2rem;
-        border-radius: 8px;
-        font-weight: 500;
-        cursor: pointer;
-        transition: all 0.3s ease;
-      }
-
-      .btn-secondary:hover {
-        border-color: var(--accent-gold);
-        color: var(--accent-gold);
-      }
-
-      .checkbox-custom {
-        appearance: none;
-        width: 1.25rem;
-        height: 1.25rem;
-        border: 2px solid var(--border-light);
-        border-radius: 4px;
-        position: relative;
-        cursor: pointer;
-        transition: all 0.3s ease;
-      }
-
-      .checkbox-custom:checked {
-        background-color: var(--accent-gold);
-        border-color: var(--accent-gold);
-      }
-
-      .checkbox-custom:checked::after {
-        content: "✓";
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        color: white;
-        font-size: 0.875rem;
-        font-weight: bold;
-      }
-
-      .progress-bar {
-        height: 6px;
-        background-color: var(--border-light);
-        border-radius: 3px;
-        overflow: hidden;
-      }
-
-      .progress-fill {
-        height: 100%;
-        background: linear-gradient(
-          90deg,
-          var(--accent-gold) 0%,
-          var(--success-green) 100%
-        );
-        width: 0%;
-        transition: width 0.5s ease;
-      }
-
-      .error-message {
-        color: var(--error-burgundy);
-        font-size: 0.875rem;
-        margin-top: 0.25rem;
-        opacity: 0;
-        transform: translateY(-10px);
-        transition: all 0.3s ease;
-      }
-
-      .error-message.show {
-        opacity: 1;
-        transform: translateY(0);
-      }
-
-      .success-message {
-        color: var(--success-green);
-        font-size: 0.875rem;
-        margin-top: 0.25rem;
-        opacity: 0;
-        transform: translateY(-10px);
-        transition: all 0.3s ease;
-      }
-
-      .success-message.show {
-        opacity: 1;
-        transform: translateY(0);
-      }
-
-      .section-hidden {
-        max-height: 0;
-        overflow: hidden;
-        opacity: 0;
-        transition: all 0.5s ease;
-      }
-
-      .section-visible {
-        max-height: 1000px;
-        opacity: 1;
-      }
-
-      .particle-container {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        pointer-events: none;
-      }
-
-      .typewriter-cursor {
-        color: var(--accent-gold);
-      }
-
-      .nav-sticky {
-        position: sticky;
-        top: 0;
-        z-index: 100;
-        backdrop-filter: blur(10px);
-        background-color: rgba(255, 255, 255, 0.95);
-        border-bottom: 1px solid var(--border-light);
-      }
-
-      @media (max-width: 768px) {
-        .form-section {
-          border-left: none;
-          padding-left: 1rem;
-          border-top: 4px solid var(--accent-gold);
-          padding-top: 1rem;
-        }
-      }
+      :root { --primary-navy: #1a365d; --secondary-gray: #4a5568; --accent-gold: #d69e2e; --bg-off-white: #fafafa; --success-green: #276749; --error-burgundy: #c53030; --border-light: #e2e8f0; }
+      body { font-family: "Inter", sans-serif; background-color: var(--bg-off-white); background-image: radial-gradient(circle at 1px 1px, rgba(74, 85, 104, 0.05) 1px, transparent 0); background-size: 20px 20px; }
+      .font-display { font-family: "Playfair Display", serif; }
+      .font-mono { font-family: "JetBrains Mono", monospace; }
+      .hero-bg { background: linear-gradient(135deg, var(--primary-navy) 0%, var(--secondary-gray) 100%); position: relative; overflow: hidden; }
+      .form-card { background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08); border: 1px solid var(--border-light); transition: all 0.3s ease; }
+      .form-card:hover { box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12); }
+      .form-section { border-left: 4px solid var(--accent-gold); padding-left: 1.5rem; margin-bottom: 2rem; }
+      .form-control { border: 2px solid var(--border-light); border-radius: 8px; padding: 0.75rem 1rem; font-size: 1rem; transition: all 0.3s ease; background-color: white; }
+      .form-control:focus { outline: none; border-color: var(--accent-gold); box-shadow: 0 0 0 3px rgba(214, 158, 46, 0.1); }
+      .btn-primary { background: linear-gradient(135deg, var(--accent-gold) 0%, #b7791f 100%); color: white; padding: 0.875rem 2rem; border-radius: 8px; font-weight: 600; border: none; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 4px 15px rgba(214, 158, 46, 0.3); }
+      .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(214, 158, 46, 0.4); }
+      .btn-secondary { background: white; color: var(--secondary-gray); border: 2px solid var(--border-light); padding: 0.875rem 2rem; border-radius: 8px; font-weight: 500; cursor: pointer; transition: all 0.3s ease; }
+      .btn-secondary:hover { border-color: var(--accent-gold); color: var(--accent-gold); }
+      .checkbox-custom { appearance: none; width: 1.25rem; height: 1.25rem; border: 2px solid var(--border-light); border-radius: 4px; position: relative; cursor: pointer; transition: all 0.3s ease; }
+      .checkbox-custom:checked { background-color: var(--accent-gold); border-color: var(--accent-gold); }
+      .checkbox-custom:checked::after { content: "✓"; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-size: 0.875rem; font-weight: bold; }
+      .error-message { color: var(--error-burgundy); font-size: 0.875rem; margin-top: 0.25rem; opacity: 0; transform: translateY(-10px); transition: all 0.3s ease; }
+      .error-message.show { opacity: 1; transform: translateY(0); }
+      .section-hidden { max-height: 0; overflow: hidden; opacity: 0; transition: all 0.5s ease; }
+      .section-visible { max-height: 1000px; opacity: 1; }
+      .nav-sticky { position: sticky; top: 0; z-index: 100; backdrop-filter: blur(10px); background-color: rgba(255, 255, 255, 0.95); border-bottom: 1px solid var(--border-light); }
     </style>
   </head>
   <body>
-    <!-- Navigation -->
     <nav class="nav-sticky">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="flex justify-between items-center h-16">
           <div class="flex items-center">
-            <h1 class="font-display text-xl font-semibold text-gray-800">
-              Generator Surat
-            </h1>
+            <h1 class="font-display text-xl font-semibold text-gray-800">Generator Surat</h1>
           </div>
           <div class="flex items-center space-x-4">
-            <a
-              href="documentation.html"
-              class="text-gray-600 hover:text-gray-800 px-3 py-2 rounded-md text-sm font-medium transition-colors"
-            >
-              Dokumentasi
-            </a>
-            <div class="progress-bar w-32">
-              <div class="progress-fill" id="progressBar"></div>
+            <a href="documentation.html" class="text-gray-600 hover:text-gray-800 px-3 py-2 rounded-md text-sm font-medium transition-colors">Dokumentasi</a>
+            <div class="progress-bar w-32" style="height: 6px; background-color: var(--border-light); border-radius: 3px; overflow: hidden;">
+              <div class="progress-fill" id="progressBar" style="height: 100%; background: linear-gradient(90deg, var(--accent-gold) 0%, var(--success-green) 100%); width: 0%; transition: width 0.5s ease;"></div>
             </div>
           </div>
         </div>
       </div>
     </nav>
 
-    <!-- Hero Section -->
     <section class="hero-bg text-white py-16 relative">
-      <div class="particle-container" id="particleContainer"></div>
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         <div class="text-center">
-          <h1 class="font-display text-4xl md:text-5xl font-bold mb-4">
-            <span id="typewriter"></span>
-          </h1>
-          <p class="text-xl md:text-2xl text-gray-200 mb-8 max-w-3xl mx-auto">
-            Aplikasi pembuatan surat formal otomatis untuk keperluan kurikulum
-            silabus dan bahan tayang standar
-          </p>
-          <div
-            class="flex justify-center items-center space-x-6 text-sm text-gray-300"
-          >
-            <div class="flex items-center">
-              <div class="w-3 h-3 bg-yellow-400 rounded-full mr-2"></div>
-              <span>12+ Template Surat</span>
-            </div>
-            <div class="flex items-center">
-              <div class="w-3 h-3 bg-green-400 rounded-full mr-2"></div>
-              <span>Otomatis & Cepat</span>
-            </div>
-            <div class="flex items-center">
-              <div class="w-3 h-3 bg-blue-400 rounded-full mr-2"></div>
-              <span>Format Profesional</span>
-            </div>
-          </div>
+          <h1 class="font-display text-4xl md:text-5xl font-bold mb-4"><span id="typewriter"></span></h1>
+          <p class="text-xl md:text-2xl text-gray-200 mb-8 max-w-3xl mx-auto">Aplikasi pembuatan surat formal otomatis</p>
         </div>
       </div>
     </section>
 
-    <!-- Main Form Section -->
     <section class="py-12">
       <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         <form id="letterForm" class="form-card p-8">
-          <!-- Letter Type Selection -->
+          
           <div class="form-section">
-            <h2 class="font-display text-2xl font-semibold text-gray-800 mb-6">
-              Jenis Surat
-            </h2>
+            <h2 class="font-display text-2xl font-semibold text-gray-800 mb-6">Jenis Surat</h2>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <label
-                  for="jenisSurat"
-                  class="block text-sm font-medium text-gray-700 mb-2"
-                >
-                  Jenis Surat *
-                </label>
+                <label for="jenisSurat" class="block text-sm font-medium text-gray-700 mb-2">Jenis Surat *</label>
                 <select id="jenisSurat" class="form-control w-full" required>
                   <option value="">-- Pilih Jenis Surat --</option>
                   <option value="Kurikulum Silabus">Kurikulum Silabus</option>
-                  <option value="Bahan Tayang Standar">
-                    Bahan Tayang Standar
-                  </option>
+                  <option value="Bahan Tayang Standar">Bahan Tayang Standar</option>
                 </select>
                 <div class="error-message" id="jenisSuratError"></div>
               </div>
               <div>
-                <label
-                  for="sifatSurat"
-                  class="block text-sm font-medium text-gray-700 mb-2"
-                >
-                  Sifat Surat *
-                </label>
+                <label for="sifatSurat" class="block text-sm font-medium text-gray-700 mb-2">Sifat Surat *</label>
                 <select id="sifatSurat" class="form-control w-full" required>
                   <option value="">-- Pilih Sifat Surat --</option>
                   <option value="undangan">Undangan</option>
@@ -357,617 +98,211 @@
             </div>
           </div>
 
-          <!-- Letter Properties -->
           <div class="form-section">
-            <h2 class="font-display text-2xl font-semibold text-gray-800 mb-6">
-              Properti Surat
-            </h2>
+            <h2 class="font-display text-2xl font-semibold text-gray-800 mb-6">Properti Surat</h2>
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div>
-                <label class="block text-sm font-medium text-gray-700 mb-2"
-                  >Lingkup Surat</label
-                >
+                <label class="block text-sm font-medium text-gray-700 mb-2">Lingkup Surat</label>
                 <div class="space-y-2">
-                  <label class="flex items-center">
-                    <input
-                      type="checkbox"
-                      id="lingkupInternal"
-                      class="checkbox-custom mr-3"
-                    />
-                    <span class="text-sm">Internal</span>
-                  </label>
-                  <label class="flex items-center">
-                    <input
-                      type="checkbox"
-                      id="lingkupEksternal"
-                      class="checkbox-custom mr-3"
-                    />
-                    <span class="text-sm">Eksternal</span>
-                  </label>
+                  <label class="flex items-center"><input type="checkbox" id="lingkupInternal" class="checkbox-custom mr-3" /><span class="text-sm">Internal</span></label>
+                  <label class="flex items-center"><input type="checkbox" id="lingkupEksternal" class="checkbox-custom mr-3" /><span class="text-sm">Eksternal</span></label>
                 </div>
               </div>
               <div>
-                <label
-                  for="bulanSurat"
-                  class="block text-sm font-medium text-gray-700 mb-2"
-                >
-                  Bulan Pembuatan *
-                </label>
+                <label for="bulanSurat" class="block text-sm font-medium text-gray-700 mb-2">Bulan Pembuatan *</label>
                 <select id="bulanSurat" class="form-control w-full" required>
                   <option value="">-- Pilih Bulan --</option>
-                  <option value="Januari">Januari</option>
-                  <option value="Februari">Februari</option>
-                  <option value="Maret">Maret</option>
-                  <option value="April">April</option>
-                  <option value="Mei">Mei</option>
-                  <option value="Juni">Juni</option>
-                  <option value="Juli">Juli</option>
-                  <option value="Agustus">Agustus</option>
-                  <option value="September">September</option>
-                  <option value="Oktober">Oktober</option>
-                  <option value="November">November</option>
-                  <option value="Desember">Desember</option>
+                  <option value="Januari">Januari</option><option value="Februari">Februari</option><option value="Maret">Maret</option>
+                  <option value="April">April</option><option value="Mei">Mei</option><option value="Juni">Juni</option>
+                  <option value="Juli">Juli</option><option value="Agustus">Agustus</option><option value="September">September</option>
+                  <option value="Oktober">Oktober</option><option value="November">November</option><option value="Desember">Desember</option>
                 </select>
                 <div class="error-message" id="bulanSuratError"></div>
               </div>
               <div>
-                <label
-                  for="lampiran"
-                  class="block text-sm font-medium text-gray-700 mb-2"
-                >
-                  Lampiran
-                </label>
+                <label for="lampiran" class="block text-sm font-medium text-gray-700 mb-2">Lampiran</label>
                 <select id="lampiran" class="form-control w-full">
-                  <option value="-">-</option>
-                  <option value="1 (satu)">1 (satu)</option>
-                  <option value="2 (dua)">2 (dua)</option>
-                  <option value="3 (tiga)">3 (tiga)</option>
-                  <option value="4 (empat)">4 (empat)</option>
-                  <option value="5 (lima)">5 (lima)</option>
+                  <option value="-">-</option><option value="1 (satu)">1 (satu)</option><option value="2 (dua)">2 (dua)</option>
+                  <option value="3 (tiga)">3 (tiga)</option><option value="4 (empat)">4 (empat)</option><option value="5 (lima)">5 (lima)</option>
                 </select>
               </div>
             </div>
           </div>
 
-          <!-- Curriculum Type Section (Conditional) -->
           <div id="curriculumSection" class="form-section section-hidden">
-            <h2 class="font-display text-2xl font-semibold text-gray-800 mb-6">
-              Jenis Kurikulum
-            </h2>
+            <h2 class="font-display text-2xl font-semibold text-gray-800 mb-6">Jenis Kurikulum</h2>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <label
-                  for="jenisKurikulum"
-                  class="block text-sm font-medium text-gray-700 mb-2"
-                >
-                  Jenis Kurikulum *
-                </label>
+                <label for="jenisKurikulum" class="block text-sm font-medium text-gray-700 mb-2">Jenis Kurikulum *</label>
                 <select id="jenisKurikulum" class="form-control w-full">
-                  <option value="">-- Pilih Kurikulum --</option>
-                  <option value="KPK">KPK</option>
-                  <option value="ECP">ECP</option>
-                  <option value="Jasa Perdagangan">Jasa Perdagangan</option>
+                  <option value="">-- Pilih Kurikulum --</option><option value="KPK">KPK</option><option value="ECP">ECP</option><option value="Jasa Perdagangan">Jasa Perdagangan</option>
                 </select>
               </div>
               <div id="perihalKPKSection" class="section-hidden">
-                <label
-                  for="perihalKPK"
-                  class="block text-sm font-medium text-gray-700 mb-2"
-                >
-                  Perihal Surat
-                </label>
+                <label for="perihalKPK" class="block text-sm font-medium text-gray-700 mb-2">Perihal Surat</label>
                 <select id="perihalKPK" class="form-control w-full">
-                  <option value="">-- Pilih Perihal --</option>
-                  <option value="persiapan pelatihan">
-                    Persiapan Pelatihan
-                  </option>
-                  <option value="review">Review</option>
+                  <option value="">-- Pilih Perihal --</option><option value="persiapan pelatihan">Persiapan Pelatihan</option><option value="review">Review</option>
                 </select>
               </div>
             </div>
             <div id="tahapECPSection" class="mt-6 section-hidden">
-              <label
-                for="tahapECP"
-                class="block text-sm font-medium text-gray-700 mb-2"
-              >
-                Tahap ECP
-              </label>
+              <label for="tahapECP" class="block text-sm font-medium text-gray-700 mb-2">Tahap ECP</label>
               <select id="tahapECP" class="form-control w-full">
-                <option value="">-- Pilih Tahap --</option>
-                <option value="webinar ECP">Webinar ECP</option>
-                <option value="Workshop dan Verifikasi Perusahaan">
-                  Workshop dan Verifikasi Perusahaan
-                </option>
-                <option value="Training of Exporters">
-                  Training of Exporters
-                </option>
-                <option value="Penampingan Market Development">
-                  Penampingan Market Development
-                </option>
-                <option value="Business Matching">Business Matching</option>
-                <option value="Progress Monitoring">Progress Monitoring</option>
-                <option value="Evaluasi dan Penutupan">
-                  Evaluasi dan Penutupan
-                </option>
+                <option value="">-- Pilih Tahap --</option><option value="webinar ECP">Webinar ECP</option>
+                <option value="Workshop dan Verifikasi Perusahaan">Workshop dan Verifikasi Perusahaan</option>
               </select>
             </div>
           </div>
 
-          <!-- Meeting Details -->
           <div class="form-section">
-            <h2 class="font-display text-2xl font-semibold text-gray-800 mb-6">
-              Detail Pertemuan
-            </h2>
+            <h2 class="font-display text-2xl font-semibold text-gray-800 mb-6">Detail Pertemuan</h2>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <label
-                  for="mitraKerjasama"
-                  class="block text-sm font-medium text-gray-700 mb-2"
-                >
-                  Mitra Kerja Sama
-                </label>
-                <input
-                  type="text"
-                  id="mitraKerjasama"
-                  class="form-control w-full"
-                  placeholder="Nama instansi mitra"
-                />
+                <label for="mitraKerjasama" class="block text-sm font-medium text-gray-700 mb-2">Mitra Kerja Sama</label>
+                <input type="text" id="mitraKerjasama" class="form-control w-full" placeholder="Nama instansi mitra" />
               </div>
               <div>
-                <label
-                  for="topikRapat"
-                  class="block text-sm font-medium text-gray-700 mb-2"
-                >
-                  Judul Pelatihan / Topik Rapat *
-                </label>
-                <input
-                  type="text"
-                  id="topikRapat"
-                  class="form-control w-full"
-                  placeholder="Topik atau judul pelatihan"
-                  required
-                />
+                <label for="topikRapat" class="block text-sm font-medium text-gray-700 mb-2">Judul Pelatihan / Topik Rapat *</label>
+                <input type="text" id="topikRapat" class="form-control w-full" placeholder="Topik atau judul pelatihan" required />
                 <div class="error-message" id="topikRapatError"></div>
               </div>
               <div>
-                <label
-                  for="tanggalPelaksanaan"
-                  class="block text-sm font-medium text-gray-700 mb-2"
-                >
-                  Tanggal Pelaksanaan *
-                </label>
-                <input
-                  type="date"
-                  id="tanggalPelaksanaan"
-                  class="form-control w-full"
-                  required
-                />
+                <label for="tanggalPelaksanaan" class="block text-sm font-medium text-gray-700 mb-2">Tanggal Pelaksanaan *</label>
+                <input type="date" id="tanggalPelaksanaan" class="form-control w-full" required />
                 <div class="error-message" id="tanggalPelaksanaanError"></div>
               </div>
+              
               <div>
-                <label
-                  for="waktuPelaksanaan"
-                  class="block text-sm font-medium text-gray-700 mb-2"
-                >
-                  Waktu Pelaksanaan *
-                </label>
-                <select
-                  id="waktuPelaksanaan"
-                  class="form-control w-full"
-                  required
-                >
+                <label for="waktuPelaksanaan" class="block text-sm font-medium text-gray-700 mb-2">Waktu Pelaksanaan *</label>
+                <select id="waktuPelaksanaan" class="form-control w-full" required>
                   <option value="">-- Pilih Waktu --</option>
-                </select>
+                  </select>
                 <div class="error-message" id="waktuPelaksanaanError"></div>
               </div>
             </div>
           </div>
 
-          <!-- BTS Configuration (Conditional) -->
           <div id="btsSection" class="form-section section-hidden">
-            <h2 class="font-display text-2xl font-semibold text-gray-800 mb-6">
-              Konfigurasi BTS
-            </h2>
+            <h2 class="font-display text-2xl font-semibold text-gray-800 mb-6">Konfigurasi BTS</h2>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
               <div>
-                <label
-                  for="jumlahBTS"
-                  class="block text-sm font-medium text-gray-700 mb-2"
-                >
-                  Jumlah BTS yang Dibahas *
-                </label>
+                <label for="jumlahBTS" class="block text-sm font-medium text-gray-700 mb-2">Jumlah BTS yang Dibahas *</label>
                 <select id="jumlahBTS" class="form-control w-full">
-                  <option value="">-- Pilih Jumlah --</option>
-                  <option value="1">1 BTS</option>
-                  <option value="2">2 BTS</option>
-                  <option value="3">3 BTS</option>
+                  <option value="">-- Pilih Jumlah --</option><option value="1">1 BTS</option><option value="2">2 BTS</option><option value="3">3 BTS</option>
                 </select>
               </div>
             </div>
-
-            <!-- BTS 1 -->
-            <div
-              id="bts1Section"
-              class="section-hidden mb-6 p-4 bg-gray-50 rounded-lg"
-            >
-              <h3 class="font-semibold text-gray-800 mb-4">BTS 1</h3>
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label
-                    for="btsPelatihan1"
-                    class="block text-sm font-medium text-gray-700 mb-2"
-                  >
-                    BTS Pelatihan
-                  </label>
-                  <select id="btsPelatihan1" class="form-control w-full">
-                    <option value="">-- Pilih Pelatihan --</option>
-                  </select>
-                </div>
-                <div>
-                  <label
-                    for="btsMateri1"
-                    class="block text-sm font-medium text-gray-700 mb-2"
-                  >
-                    Materi BTS
-                  </label>
-                  <select id="btsMateri1" class="form-control w-full">
-                    <option value="">-- Pilih Materi --</option>
-                  </select>
-                </div>
-              </div>
+            <div id="bts1Section" class="section-hidden mb-6 p-4 bg-gray-50 rounded-lg">
+               <h3 class="font-semibold text-gray-800 mb-4">BTS 1</h3>
+               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                 <div><label>BTS Pelatihan</label><select id="btsPelatihan1" class="form-control w-full"></select></div>
+                 <div><label>Materi BTS</label><select id="btsMateri1" class="form-control w-full"></select></div>
+               </div>
+            </div>
             </div>
 
-            <!-- BTS 2 -->
-            <div
-              id="bts2Section"
-              class="section-hidden mb-6 p-4 bg-gray-50 rounded-lg"
-            >
-              <h3 class="font-semibold text-gray-800 mb-4">BTS 2</h3>
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label
-                    for="btsPelatihan2"
-                    class="block text-sm font-medium text-gray-700 mb-2"
-                  >
-                    BTS Pelatihan
-                  </label>
-                  <select id="btsPelatihan2" class="form-control w-full">
-                    <option value="">-- Pilih Pelatihan --</option>
-                  </select>
-                </div>
-                <div>
-                  <label
-                    for="btsMateri2"
-                    class="block text-sm font-medium text-gray-700 mb-2"
-                  >
-                    Materi BTS
-                  </label>
-                  <select id="btsMateri2" class="form-control w-full">
-                    <option value="">-- Pilih Materi --</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            <!-- BTS 3 -->
-            <div
-              id="bts3Section"
-              class="section-hidden mb-6 p-4 bg-gray-50 rounded-lg"
-            >
-              <h3 class="font-semibold text-gray-800 mb-4">BTS 3</h3>
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label
-                    for="btsPelatihan3"
-                    class="block text-sm font-medium text-gray-700 mb-2"
-                  >
-                    BTS Pelatihan
-                  </label>
-                  <select id="btsPelatihan3" class="form-control w-full">
-                    <option value="">-- Pilih Pelatihan --</option>
-                  </select>
-                </div>
-                <div>
-                  <label
-                    for="btsMateri3"
-                    class="block text-sm font-medium text-gray-700 mb-2"
-                  >
-                    Materi BTS
-                  </label>
-                  <select id="btsMateri3" class="form-control w-full">
-                    <option value="">-- Pilih Materi --</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Facilitator Management -->
           <div id="facilitatorSection" class="form-section section-hidden">
-            <h2 class="font-display text-2xl font-semibent text-gray-800 mb-6">
-              Manajemen Fasilitator
-            </h2>
+            <h2 class="font-display text-2xl font-semibent text-gray-800 mb-6">Manajemen Fasilitator</h2>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
               <div>
-                <label class="block text-sm font-medium text-gray-700 mb-2"
-                  >Varian Surat</label
-                >
+                <label class="block text-sm font-medium text-gray-700 mb-2">Varian Surat</label>
                 <div class="space-y-2">
-                  <label class="flex items-center">
-                    <input
-                      type="checkbox"
-                      id="varianIndividu"
-                      class="checkbox-custom mr-3"
-                    />
-                    <span class="text-sm">Individu</span>
-                  </label>
-                  <label class="flex items-center">
-                    <input
-                      type="checkbox"
-                      id="varianPenugasan"
-                      class="checkbox-custom mr-3"
-                    />
-                    <span class="text-sm">Penugasan</span>
-                  </label>
-                  <label class="flex items-center">
-                    <input
-                      type="checkbox"
-                      id="varianKelompok"
-                      class="checkbox-custom mr-3"
-                    />
-                    <span class="text-sm">Kelompok</span>
-                  </label>
+                  <label class="flex items-center"><input type="checkbox" id="varianIndividu" class="checkbox-custom mr-3" /><span class="text-sm">Individu</span></label>
+                  <label class="flex items-center"><input type="checkbox" id="varianPenugasan" class="checkbox-custom mr-3" /><span class="text-sm">Penugasan</span></label>
+                  <label class="flex items-center"><input type="checkbox" id="varianKelompok" class="checkbox-custom mr-3" /><span class="text-sm">Kelompok</span></label>
                 </div>
               </div>
               <div id="jumlahFasilitatorSection" class="section-hidden">
-                <label
-                  for="jumlahFasilitator"
-                  class="block text-sm font-medium text-gray-700 mb-2"
-                >
-                  Jumlah Fasilitator
-                </label>
+                <label for="jumlahFasilitator" class="block text-sm font-medium text-gray-700 mb-2">Jumlah Fasilitator</label>
                 <select id="jumlahFasilitator" class="form-control w-full">
-                  <option value="">-- Pilih Jumlah --</option>
-                  <option value="2">2 Fasilitator</option>
-                  <option value="3">3 Fasilitator</option>
+                  <option value="">-- Pilih Jumlah --</option><option value="2">2 Fasilitator</option><option value="3">3 Fasilitator</option>
                 </select>
               </div>
             </div>
-
-            <!-- Facilitator Selection -->
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
               <div id="fasilitator1Section" class="section-hidden">
-                <label
-                  for="namaFasilitator1"
-                  class="block text-sm font-medium text-gray-700 mb-2"
-                >
-                  Nama Fasilitator 1
-                </label>
-                <select id="namaFasilitator1" class="form-control w-full">
-                  <option value="">-- Pilih Fasilitator --</option>
-                </select>
-                <div
-                  class="text-sm text-gray-500 mt-1"
-                  id="instansiFasilitator1"
-                ></div>
+                <label for="namaFasilitator1" class="block text-sm font-medium text-gray-700 mb-2">Nama Fasilitator 1</label>
+                <select id="namaFasilitator1" class="form-control w-full"><option value="">-- Pilih Fasilitator --</option></select>
+                <div class="text-sm text-gray-500 mt-1" id="instansiFasilitator1"></div>
               </div>
               <div id="fasilitator2Section" class="section-hidden">
-                <label
-                  for="namaFasilitator2"
-                  class="block text-sm font-medium text-gray-700 mb-2"
-                >
-                  Nama Fasilitator 2
-                </label>
-                <select id="namaFasilitator2" class="form-control w-full">
-                  <option value="">-- Pilih Fasilitator --</option>
-                </select>
-                <div
-                  class="text-sm text-gray-500 mt-1"
-                  id="instansiFasilitator2"
-                ></div>
+                <label for="namaFasilitator2" class="block text-sm font-medium text-gray-700 mb-2">Nama Fasilitator 2</label>
+                <select id="namaFasilitator2" class="form-control w-full"><option value="">-- Pilih Fasilitator --</option></select>
+                <div class="text-sm text-gray-500 mt-1" id="instansiFasilitator2"></div>
               </div>
               <div id="fasilitator3Section" class="section-hidden">
-                <label
-                  for="namaFasilitator3"
-                  class="block text-sm font-medium text-gray-700 mb-2"
-                >
-                  Nama Fasilitator 3
-                </label>
-                <select id="namaFasilitator3" class="form-control w-full">
-                  <option value="">-- Pilih Fasilitator --</option>
-                </select>
-                <div
-                  class="text-sm text-gray-500 mt-1"
-                  id="instansiFasilitator3"
-                ></div>
+                <label for="namaFasilitator3" class="block text-sm font-medium text-gray-700 mb-2">Nama Fasilitator 3</label>
+                <select id="namaFasilitator3" class="form-control w-full"><option value="">-- Pilih Fasilitator --</option></select>
+                <div class="text-sm text-gray-500 mt-1" id="instansiFasilitator3"></div>
               </div>
             </div>
-
-            <!-- Institution Details -->
             <div id="institutionSection" class="section-hidden">
               <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <label
-                    for="pimpinan"
-                    class="block text-sm font-medium text-gray-700 mb-2"
-                  >
-                    Pimpinan
-                  </label>
-                  <select id="pimpinan" class="form-control w-full">
-                    <option value="">-- Pilih Pimpinan --</option>
-                    <option value="Kepala">Kepala</option>
-                    <option value="Pimpinan">Pimpinan</option>
-                    <option value="Rektor">Rektor</option>
-                    <option value="Direktur">Direktur</option>
-                  </select>
+                  <label for="pimpinan" class="block text-sm font-medium text-gray-700 mb-2">Pimpinan</label>
+                  <select id="pimpinan" class="form-control w-full"><option value="">-- Pilih Pimpinan --</option><option value="Kepala">Kepala</option><option value="Direktur">Direktur</option></select>
                 </div>
                 <div>
-                  <label
-                    for="instansi"
-                    class="block text-sm font-medium text-gray-700 mb-2"
-                  >
-                    Instansi
-                  </label>
-                  <input
-                    type="text"
-                    id="instansi"
-                    class="form-control w-full"
-                    placeholder="Nama instansi"
-                  />
+                  <label for="instansi" class="block text-sm font-medium text-gray-700 mb-2">Instansi</label>
+                  <input type="text" id="instansi" class="form-control w-full" placeholder="Nama instansi" />
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- Action Buttons -->
-          <div
-            class="flex flex-wrap gap-4 justify-center pt-8 border-t border-gray-200"
-          >
-            <button type="button" id="generateBtn" class="btn-primary">
-              <span class="flex items-center">
-                <svg
-                  class="w-5 h-5 mr-2"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                  ></path>
-                </svg>
-                Generate Surat
-              </span>
-            </button>
-            <button type="button" id="resetBtn" class="btn-secondary">
-              <span class="flex items-center">
-                <svg
-                  class="w-5 h-5 mr-2"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                  ></path>
-                </svg>
-                Reset Form
-              </span>
-            </button>
-            <button type="button" id="previewBtn" class="btn-secondary">
-              <span class="flex items-center">
-                <svg
-                  class="w-5 h-5 mr-2"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                  ></path>
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-                  ></path>
-                </svg>
-                Preview Template
-              </span>
-            </button>
+          <div class="flex flex-wrap gap-4 justify-center pt-8 border-t border-gray-200">
+            <button type="button" id="generateBtn" class="btn-primary">Generate Surat</button>
+            <button type="button" id="resetBtn" class="btn-secondary">Reset Form</button>
+            <button type="button" id="formPreviewBtn" class="btn-secondary">Preview Template</button>
           </div>
         </form>
       </div>
     </section>
 
-    <!-- Statistics Section -->
-    <section class="py-12 bg-white">
-      <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-        <h2
-          class="font-display text-3xl font-semibold text-center text-gray-800 mb-12"
-        >
-          Statistik Penggunaan
-        </h2>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <div class="form-card p-6">
-            <h3 class="font-semibold text-gray-800 mb-4">
-              Jenis Surat Paling Sering Digunakan
-            </h3>
-            <div id="letterTypeChart" style="height: 300px"></div>
-          </div>
-          <div class="form-card p-6">
-            <h3 class="font-semibold text-gray-800 mb-4">Statistik Bulanan</h3>
-            <div id="monthlyChart" style="height: 300px"></div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Footer -->
-    <footer class="bg-gray-800 text-white py-8">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="text-center">
-          <p class="text-gray-300">
-            &copy; 2025 Generator Surat Template. Aplikasi pembuatan surat
-            formal otomatis.
-          </p>
-          <p class="text-gray-400 text-sm mt-2">
-            Versi 1.0.0 - Dikembangkan untuk keperluan dokumentasi resmi
-          </p>
-        </div>
-      </div>
-    </footer>
-
-    <!-- Loading Modal -->
-    <div
-      id="loadingModal"
-      class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden"
-    >
-      <div class="bg-white rounded-lg p-8 text-center">
-        <div
-          class="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-500 mx-auto mb-4"
-        ></div>
-        <p class="text-gray-700 font-medium">Membuat surat...</p>
-        <p class="text-gray-500 text-sm mt-2">Mohon tunggu sebentar</p>
-      </div>
-    </div>
-
-    <!-- Success Modal -->
-   <div id="successModal" class="fixed inset-0 z-50 flex items-center justify-center hidden bg-black bg-opacity-50 backdrop-blur-sm">
-    <div class="bg-white rounded-2xl p-8 max-w-sm w-full text-center shadow-2xl transform scale-90 opacity-0">
-        <div class="w-16 h-16 bg-green-100 text-green-500 rounded-full flex items-center justify-center mx-auto mb-4">
-            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-        </div>
-        <h3 class="text-xl font-bold text-gray-900 mb-2">Surat Berhasil Dibuat!</h3>
-        <p class="text-gray-500 mb-6 text-sm">Apa yang ingin Anda lakukan selanjutnya?</p>
-        
-        <div class="space-y-3">
-            <button id="previewBtn" class="w-full bg-gray-100 text-gray-700 font-bold py-3 rounded-xl hover:bg-gray-200 transition flex items-center justify-center gap-2">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
-                Lihat (Preview)
-            </button>
-
-            <button id="sendToTaskBtn" class="w-full bg-blue-600 text-white font-bold py-3 rounded-xl hover:bg-blue-700 transition flex items-center justify-center gap-2">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
-                Kirim ke User/Tugas
-            </button>
-
-            <button id="downloadBtn" class="w-full bg-white border border-gray-200 text-gray-700 font-bold py-3 rounded-xl hover:bg-gray-50 transition flex items-center justify-center gap-2">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                Unduh File
-            </button>
+    <div id="successModal" class="fixed inset-0 z-50 flex items-center justify-center hidden bg-black bg-opacity-50 backdrop-blur-sm">
+        <div class="bg-white rounded-2xl p-8 max-w-sm w-full text-center shadow-2xl transform scale-90 opacity-0">
+            <div class="w-16 h-16 bg-green-100 text-green-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+            </div>
+            <h3 class="text-xl font-bold text-gray-900 mb-2">Surat Berhasil Dibuat!</h3>
+            <p class="text-gray-500 mb-6 text-sm">Apa yang ingin Anda lakukan selanjutnya?</p>
             
-            <button id="closeSuccessBtn" class="text-sm text-gray-400 hover:text-gray-600 mt-2">
-                Tutup
-            </button>
+            <div class="space-y-3">
+                <button id="modalPreviewBtn" class="w-full bg-gray-100 text-gray-700 font-bold py-3 rounded-xl hover:bg-gray-200 transition flex items-center justify-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                    Lihat (Preview)
+                </button>
+
+                <button id="modalSendBtn" class="w-full bg-blue-600 text-white font-bold py-3 rounded-xl hover:bg-blue-700 transition flex items-center justify-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
+                    Kirim ke User/Tugas
+                </button>
+
+                <button id="modalDownloadBtn" class="w-full bg-white border border-gray-200 text-gray-700 font-bold py-3 rounded-xl hover:bg-gray-50 transition flex items-center justify-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                    Unduh File
+                </button>
+                
+                <button id="closeSuccessBtn" class="text-sm text-gray-400 hover:text-gray-600 mt-2">
+                    Tutup
+                </button>
+            </div>
         </div>
     </div>
-</div>
+
+    <div id="loadingModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+      <div class="bg-white rounded-lg p-8 text-center">
+        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-500 mx-auto mb-4"></div>
+        <p class="text-gray-700 font-medium">Membuat surat...</p>
+      </div>
+    </div>
+
+    <script>
+      window.SUPABASE_URL = "https://fotwxdjbjpxsllfudkip.supabase.co";
+      window.SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZvdHd4ZGpianB4c2xsZnVka2lwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY0NzA4MzEsImV4cCI6MjA4MjA0NjgzMX0.2zOvNV6-fm3z4jeM_tSyob4EbRp9Uj3CwWU0jB8wnys";
+      window.SUPABASE_FACILITATORS_TABLE = "facilitators";
+    </script>
+    <script src="data.js"></script>
+    <script src="main.js"></script>
+  </body>
+</html>
