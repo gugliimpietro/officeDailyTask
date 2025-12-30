@@ -562,8 +562,24 @@ class LetterGenerator {
   
   showLoadingModal() { document.getElementById("loadingModal")?.classList.remove("hidden"); }
   hideLoadingModal() { document.getElementById("loadingModal")?.classList.add("hidden"); }
-  showSuccessModal() { document.getElementById("successModal")?.classList.remove("hidden"); }
-  closeSuccessModal() { document.getElementById("successModal")?.classList.add("hidden"); }
+  showSuccessModal() {
+    const modal = document.getElementById("successModal");
+    const card = document.getElementById("successModalCard");
+    if (!modal || !card) return;
+    modal.classList.remove("hidden");
+    requestAnimationFrame(() => {
+      card.classList.remove("opacity-0", "scale-90");
+      card.classList.add("opacity-100", "scale-100");
+    });
+  }
+  closeSuccessModal() {
+    const modal = document.getElementById("successModal");
+    const card = document.getElementById("successModalCard");
+    if (!modal || !card) return;
+    card.classList.remove("opacity-100", "scale-100");
+    card.classList.add("opacity-0", "scale-90");
+    setTimeout(() => modal.classList.add("hidden"), 200);
+  }
   showNotification(msg, type="info") { 
     const n=document.createElement("div"); n.className=`fixed top-4 right-4 p-4 rounded z-50 text-white ${type==="error"?"bg-red-500":"bg-blue-500"}`; 
     n.textContent=msg; document.body.appendChild(n); setTimeout(()=>n.remove(),3000); 
