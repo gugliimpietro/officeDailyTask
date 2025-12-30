@@ -6,6 +6,7 @@ class LetterGenerator {
     this.isGenerating = false;
     this.generatedBlob = null;
     this.generatedFilename = null;
+    this.templateUrl = null; 
     this.currentUser = { username: "guest" };
     this.init().catch((err) => console.error("Init error:", err));
   }
@@ -86,7 +87,7 @@ class LetterGenerator {
     addListener("resetBtn", "click", () => this.handleReset());
     addListener("formPreviewBtn", "click", () => alert("Klik 'Generate Surat' terlebih dahulu."));
 
-    // Modal Buttons (Ensure IDs match index.html)
+    // Modal Buttons
     addListener("modalPreviewBtn", "click", () => this.handlePreview()); 
     addListener("modalSendBtn", "click", () => this.handleSendToTask());
     addListener("modalDownloadBtn", "click", () => this.handleDownload());
@@ -369,6 +370,7 @@ class LetterGenerator {
       
       let blob = null;
       if (templateMetadata && templateMetadata.share_url) {
+          this.templateUrl = templateMetadata.share_url;
           blob = await this.downloadFileFromUrl(templateMetadata.share_url);
       } else {
           throw new Error(`Template not found for key: ${folderKey}`);
@@ -397,25 +399,20 @@ class LetterGenerator {
       if (!url) throw new Error("URL template kosong.");
       console.log("[Generator] Processing Link:", url);
 
-      // Google Drive Logic with Fallbacks
       if (url.includes("docs.google.com") || url.includes("drive.google.com")) {
           const match = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
           if (match && match[1]) {
               const fileId = match[1];
               const exportUrl = `https://docs.google.com/document/d/${fileId}/export?format=docx`;
               
-              // Strategy 1: AllOrigins (Often reliable for binary)
               try {
                   const proxyUrl1 = `https://api.allorigins.win/raw?url=${encodeURIComponent(exportUrl)}`;
-                  console.log("[Generator] Trying Proxy 1:", proxyUrl1);
                   const resp1 = await fetch(proxyUrl1);
                   if (resp1.ok) return await resp1.blob();
               } catch (e) { console.warn("Proxy 1 failed", e); }
 
-              // Strategy 2: CorsProxy.io (Backup)
               try {
                   const proxyUrl2 = `https://corsproxy.io/?${encodeURIComponent(exportUrl)}`;
-                  console.log("[Generator] Trying Proxy 2:", proxyUrl2);
                   const resp2 = await fetch(proxyUrl2);
                   if (resp2.ok) return await resp2.blob();
               } catch (e) { console.warn("Proxy 2 failed", e); }
@@ -424,7 +421,6 @@ class LetterGenerator {
           }
       }
       
-      // Fallback for OneDrive/Direct
       if (url.includes("1drv.ms") || url.includes("onedrive.live.com")) {
           const cleanUrl = url.split('?')[0];
           let encodedUrl = btoa(cleanUrl).replace(/\//g, '_').replace(/\+/g, '-').replace(/=+$/, '');
@@ -435,7 +431,6 @@ class LetterGenerator {
           } catch (e) { console.warn("OneDrive API failed, trying direct..."); }
       }
 
-      // Direct
       try {
           const resp = await fetch(url);
           if (!resp.ok) throw new Error(`Download gagal (Status: ${resp.status})`);
@@ -505,9 +500,11 @@ class LetterGenerator {
   }
 
   handlePreview() {
-      if (this.generatedBlob && this.generatedFilename) {
-          window.saveAs(this.generatedBlob, "PREVIEW_" + this.generatedFilename);
-          this.showNotification("Preview diunduh. Silakan buka di Word.", "info");
+      if (this.templateUrl) {
+          window.open(this.templateUrl, "_blank");
+          this.showNotification("Membuka template di tab baru...", "info");
+      } else {
+          alert("URL Template tidak ditemukan.");
       }
   }
 
@@ -529,7 +526,7 @@ class LetterGenerator {
       };
   }
 
-  // --- POPULATE TIME SLOTS (07:00, 07:30...) ---
+  // --- POPULATE TIME SLOTS ---
   populateTimeSlots() {
     const el = document.getElementById("waktuPelaksanaan");
     if (el && el.tagName === 'SELECT') {
@@ -560,10 +557,38 @@ class LetterGenerator {
     });
   }
   
+  // --- UPDATED SHOW/CLOSE MODAL ---
+  showSuccessModal() { 
+    const modal = document.getElementById("successModal");
+    const card = document.getElementById("successModalCard");
+    if(modal) {
+        modal.classList.remove("hidden");
+        if(card) {
+            requestAnimationFrame(() => {
+                card.classList.remove("opacity-0", "scale-90");
+                card.classList.add("opacity-100", "scale-100");
+            });
+        }
+    }
+  }
+
+  closeSuccessModal() {
+    const modal = document.getElementById("successModal");
+    const card = document.getElementById("successModalCard");
+    if(card) {
+        card.classList.remove("opacity-100", "scale-100");
+        card.classList.add("opacity-0", "scale-90");
+    }
+    if(modal) {
+        setTimeout(() => {
+            modal.classList.add("hidden");
+        }, 300);
+    }
+  }
+
   showLoadingModal() { document.getElementById("loadingModal")?.classList.remove("hidden"); }
   hideLoadingModal() { document.getElementById("loadingModal")?.classList.add("hidden"); }
-  showSuccessModal() { document.getElementById("successModal")?.classList.remove("hidden"); }
-  closeSuccessModal() { document.getElementById("successModal")?.classList.add("hidden"); }
+  
   showNotification(msg, type="info") { 
     const n=document.createElement("div"); n.className=`fixed top-4 right-4 p-4 rounded z-50 text-white ${type==="error"?"bg-red-500":"bg-blue-500"}`; 
     n.textContent=msg; document.body.appendChild(n); setTimeout(()=>n.remove(),3000); 

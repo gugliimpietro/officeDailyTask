@@ -234,8 +234,8 @@
                 <label for="namaFasilitator3" class="block text-sm font-medium text-gray-700 mb-2">Nama Fasilitator 3</label>
                 <select id="namaFasilitator3" class="form-control w-full"><option value="">-- Pilih Fasilitator --</option></select>
                 <div class="text-sm text-gray-500 mt-1" id="instansiFasilitator3"></div>
-              </div>
-            </div>
+               </div>
+                           </div>
             <div id="institutionSection" class="section-hidden">
               <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
@@ -259,36 +259,37 @@
       </div>
     </section>
 
-    <div id="successModal" class="fixed inset-0 z-50 flex items-center justify-center hidden bg-black bg-opacity-50 backdrop-blur-sm">
-        <div class="bg-white rounded-2xl p-8 max-w-sm w-full text-center shadow-2xl transform scale-90 opacity-0">
-            <div class="w-16 h-16 bg-green-100 text-green-500 rounded-full flex items-center justify-center mx-auto mb-4">
-                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-            </div>
-            <h3 class="text-xl font-bold text-gray-900 mb-2">Surat Berhasil Dibuat!</h3>
-            <p class="text-gray-500 mb-6 text-sm">Apa yang ingin Anda lakukan selanjutnya?</p>
+    <div id="successModal" class="fixed inset-0 z-50 flex items-center justify-center hidden bg-black bg-opacity-50 backdrop-blur-sm transition-opacity duration-300">
+    <div id="successModalCard" class="bg-white rounded-2xl p-8 max-w-sm w-full text-center shadow-2xl transform scale-90 opacity-0 transition-all duration-300 ease-out">
+        <div class="w-16 h-16 bg-green-100 text-green-500 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+        </div>
+        <h3 class="text-xl font-bold text-gray-900 mb-2">Surat Berhasil Dibuat!</h3>
+        <p class="text-gray-500 mb-6 text-sm">Apa yang ingin Anda lakukan selanjutnya?</p>
+        
+        <div class="space-y-3">
+            <button id="modalPreviewBtn" class="w-full bg-gray-100 text-gray-700 font-bold py-3 rounded-xl hover:bg-gray-200 transition flex items-center justify-center gap-2">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                Lihat Template (G-Drive)
+            </button>
+
+            <button id="modalSendBtn" class="w-full bg-blue-600 text-white font-bold py-3 rounded-xl hover:bg-blue-700 transition flex items-center justify-center gap-2">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
+                Kirim ke Komentar
+            </button>
+
+            <button id="modalDownloadBtn" class="w-full bg-white border border-gray-200 text-gray-700 font-bold py-3 rounded-xl hover:bg-gray-50 transition flex items-center justify-center gap-2">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                Unduh File
+            </button>
             
-            <div class="space-y-3">
-                <button id="modalPreviewBtn" class="w-full bg-gray-100 text-gray-700 font-bold py-3 rounded-xl hover:bg-gray-200 transition flex items-center justify-center gap-2">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
-                    Lihat (Preview)
-                </button>
-
-                <button id="modalSendBtn" class="w-full bg-blue-600 text-white font-bold py-3 rounded-xl hover:bg-blue-700 transition flex items-center justify-center gap-2">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
-                    Kirim ke User/Tugas
-                </button>
-
-                <button id="modalDownloadBtn" class="w-full bg-white border border-gray-200 text-gray-700 font-bold py-3 rounded-xl hover:bg-gray-50 transition flex items-center justify-center gap-2">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                    Unduh File
-                </button>
-                
-                <button id="closeSuccessBtn" class="text-sm text-gray-400 hover:text-gray-600 mt-2">
-                    Tutup
-                </button>
-            </div>
+            <button id="closeSuccessBtn" class="text-sm text-gray-400 hover:text-gray-600 mt-2">
+                Tutup
+            </button>
         </div>
     </div>
+</div>
+    <div class="opacity-100 scale-100 hidden" aria-hidden="true"></div>
 
     <div id="loadingModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
       <div class="bg-white rounded-lg p-8 text-center">
@@ -305,4 +306,5 @@
     <script src="data.js"></script>
     <script src="main.js"></script>
   </body>
+</html>
 </html>
