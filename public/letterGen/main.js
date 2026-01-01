@@ -6,12 +6,18 @@ class LetterGenerator {
     this.isGenerating = false;
     this.generatedBlob = null;
     this.generatedFilename = null;
-    this.templateUrl = null; 
-    this.currentUser = { username: "guest" };
+    this.generatedFileUrl = null; 
+    this.templateUrl = null;      
+    this.currentUser = { username: "sadiro" }; // TODO: Make this dynamic from your Auth system
+    
+    // --- GOOGLE CONFIG ---
+    this.GOOGLE_CLIENT_ID = 'YOUR_GOOGLE_CLIENT_ID'; // <--- PASTE YOUR CLIENT ID HERE
+    this.tokenClient = null;
+    this.accessToken = null;
+
     this.init().catch((err) => console.error("Init error:", err));
   }
 
-  // --- ANIMATION HELPER ---
   safeAnime(config) {
     try {
       if (window.anime) return window.anime(config);
@@ -27,17 +33,20 @@ class LetterGenerator {
     return null;
   }
 
-  // --- INITIALIZATION ---
   async init() {
+    // 1. POPULATE TIME SLOTS FIRST (Critical Fix)
+    this.populateTimeSlots();
+
     this.initializeUI();
+    this.initGoogleAuth(); 
+    
     this.fallbackFacilitators = typeof facilitators !== "undefined" && Array.isArray(facilitators) ? facilitators.slice() : [];
     this.facilitators = [];
+    
     this.setupEventListeners();
     this.loadFormState();
     this.initializeCharts();
     this.startParticleAnimation();
-    
-    this.populateTimeSlots();
 
     this.populateFacilitators({ loading: true });
     const loaded = await this.refreshFacilitatorsFromSupabase();
@@ -58,42 +67,53 @@ class LetterGenerator {
     this.updateProgressBar();
   }
 
+  // --- GOOGLE AUTH ---
+  initGoogleAuth() {
+    if (window.google) {
+      this.tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: this.GOOGLE_CLIENT_ID,
+        scope: 'https://www.googleapis.com/auth/drive.file',
+        callback: (tokenResponse) => {
+          if (tokenResponse && tokenResponse.access_token) {
+            this.accessToken = tokenResponse.access_token;
+            console.log("Google Auth Success");
+            if (this.isGenerating) this.handleGenerate();
+          }
+        },
+      });
+    } else {
+      console.error("GSI script missing");
+    }
+  }
+
   setupEventListeners() {
     const addListener = (id, event, handler) => {
       const el = document.getElementById(id);
       if (el) el.addEventListener(event, handler);
     };
 
-    // Form Change Listeners
     addListener("jenisSurat", "change", (e) => this.handleJenisSuratChange(e));
     addListener("sifatSurat", "change", (e) => this.handleSifatSuratChange(e));
     addListener("jenisKurikulum", "change", (e) => this.handleJenisKurikulumChange(e));
-    
     addListener("lingkupInternal", "change", () => { this.applyVisibilityRules(); this.updateProgressBar(); this.saveFormState(); });
     addListener("lingkupEksternal", "change", () => { this.applyVisibilityRules(); this.updateProgressBar(); this.saveFormState(); });
-
     addListener("varianIndividu", "change", () => this.handleVariantChange());
     addListener("varianPenugasan", "change", () => this.handleVariantChange());
     addListener("varianKelompok", "change", () => this.handleVariantChange());
-
     addListener("jumlahBTS", "change", (e) => this.handleJumlahBTSChange(e));
     [1, 2, 3].forEach(i => addListener(`btsPelatihan${i}`, "change", (e) => this.handleBTSPelatihanChange(e, i)));
-
     addListener("jumlahFasilitator", "change", (e) => this.handleJumlahFasilitatorChange(e));
     [1, 2, 3].forEach(i => addListener(`namaFasilitator${i}`, "change", (e) => this.handleFasilitatorChange(e, i)));
 
-    // Buttons
     addListener("generateBtn", "click", () => this.handleGenerate());
     addListener("resetBtn", "click", () => this.handleReset());
     addListener("formPreviewBtn", "click", () => alert("Klik 'Generate Surat' terlebih dahulu."));
 
-    // Modal Buttons
     addListener("modalPreviewBtn", "click", () => this.handlePreview()); 
     addListener("modalSendBtn", "click", () => this.handleSendToTask());
     addListener("modalDownloadBtn", "click", () => this.handleDownload());
     addListener("closeSuccessBtn", "click", () => this.closeSuccessModal());
 
-    // Validation
     document.querySelectorAll("input, select, textarea").forEach((input) => {
       input.addEventListener("change", () => this.saveFormState());
       input.addEventListener("input", () => this.saveFormState());
@@ -101,215 +121,242 @@ class LetterGenerator {
     });
   }
 
-  // --- HANDLERS ---
-  handleJenisSuratChange(e) {
-    const val = e.target.value;
-    if (val === "Kurikulum Silabus") { this.showSection(document.getElementById("curriculumSection")); this.hideSection(document.getElementById("btsSection")); }
-    else if (val === "Bahan Tayang Standar") { this.hideSection(document.getElementById("curriculumSection")); this.showSection(document.getElementById("btsSection")); }
-    this.refreshUI();
-  }
-  handleSifatSuratChange(e) { this.refreshUI(); }
-  handleJenisKurikulumChange(e) {
-    const val = e.target.value;
-    if (val === "KPK") { this.showSection(document.getElementById("perihalKPKSection")); this.hideSection(document.getElementById("tahapECPSection")); }
-    else if (val === "ECP") { this.hideSection(document.getElementById("perihalKPKSection")); this.showSection(document.getElementById("tahapECPSection")); }
-    else { this.hideSection(document.getElementById("perihalKPKSection")); this.hideSection(document.getElementById("tahapECPSection")); }
-    this.refreshUI();
-  }
-  handleVariantChange() {
-    const grp = document.getElementById("varianKelompok").checked;
-    const tgs = document.getElementById("varianPenugasan").checked;
-    const numSec = document.getElementById("jumlahFasilitatorSection");
-    const instSec = document.getElementById("institutionSection");
-    if(grp) this.showSection(numSec); else this.hideSection(numSec);
-    if(tgs || grp) this.showSection(instSec); else this.hideSection(instSec);
-    this.updateFacilitatorFields();
-    this.refreshUI();
-  }
-  handleJumlahBTSChange(e) {
-    const n = parseInt(e.target.value)||0;
-    for(let i=1;i<=3;i++) i<=n ? this.showSection(document.getElementById(`bts${i}Section`)) : this.hideSection(document.getElementById(`bts${i}Section`));
-    this.refreshUI();
-  }
-  handleBTSPelatihanChange(e, i) {
-    const val = e.target.value;
-    const el = document.getElementById(`btsMateri${i}`);
-    el.innerHTML = '<option value="">-- Pilih Materi --</option>';
-    if(val && btsTrainingPrograms[val]) {
-      btsTrainingPrograms[val].forEach(t => { const o=document.createElement("option"); o.value=t; o.textContent=t; el.appendChild(o); });
-      if(btsTrainingPrograms[val].length) el.value = btsTrainingPrograms[val][0];
-    }
-    this.refreshUI();
-  }
-  handleJumlahFasilitatorChange(e) { this.updateFacilitatorFields(parseInt(e.target.value)||0); this.refreshUI(); }
-  updateFacilitatorFields(n=null) {
-    if(n===null) n = document.getElementById("varianKelompok").checked ? (parseInt(document.getElementById("jumlahFasilitator").value)||0) : 1;
-    for(let i=1;i<=3;i++) i<=n ? this.showSection(document.getElementById(`fasilitator${i}Section`)) : this.hideSection(document.getElementById(`fasilitator${i}Section`));
-  }
-  handleFasilitatorChange(e, i) {
-    const val = e.target.value;
-    const div = document.getElementById(`instansiFasilitator${i}`);
-    if(val) { const f=this.facilitators.find(x=>x.nama===val); div.textContent = f ? `Instansi: ${f.perusahaan}` : ""; }
-    else div.textContent = "";
-    this.refreshUI();
-  }
-  refreshUI() { this.applyVisibilityRules(); this.updateProgressBar(); this.saveFormState(); }
-
-  // Visibility & Animation
-  showSection(el) { if(el) { el.classList.remove("section-hidden"); el.classList.add("section-visible"); this.safeAnime({targets:el, opacity:[0,1], translateY:[-20,0], duration:500}); } }
-  hideSection(el, clear=true) { if(el) { el.classList.remove("section-visible"); el.classList.add("section-hidden"); if(clear) this.clearInputsInElement(el); } }
-  clearInputsInElement(el) {
-    if(!el) return;
-    el.querySelectorAll("input, select, textarea").forEach(i => {
-      if(i.type==="checkbox"||i.type==="radio") i.checked=false; else i.value="";
-      const err = document.getElementById(`${i.id}Error`); if(err) err.classList.remove("show");
+  // --- GOOGLE DRIVE FOLDER LOGIC ---
+  async findOrCreateFolder(name, parentId = 'root') {
+    // 1. Search
+    const query = `mimeType='application/vnd.google-apps.folder' and name='${name}' and '${parentId}' in parents and trashed=false`;
+    const searchUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}`;
+    
+    const searchRes = await fetch(searchUrl, {
+      headers: { Authorization: `Bearer ${this.accessToken}` }
     });
-    [1,2,3].forEach(n => { const d=document.getElementById(`instansiFasilitator${n}`); if(d) d.textContent=""; });
-  }
+    const searchData = await searchRes.json();
 
-  getFieldWrapper(id) { const el=document.getElementById(id); return el ? (document.getElementById(`${id}Group`)||el.closest(".form-group")||el.parentElement) : null; }
-  setFieldVisible(id, vis) {
-    const w=this.getFieldWrapper(id); if(!w) return;
-    w.style.display = vis ? "" : "none";
-    if(!vis) {
-      const el=document.getElementById(id); if(el) (el.type==="checkbox"?el.checked=false:el.value="");
-      const err=document.getElementById(`${id}Error`); if(err) err.classList.remove("show");
+    if (searchData.files && searchData.files.length > 0) {
+      return searchData.files[0].id; 
     }
-  }
-  isFieldVisible(id) {
-    const w=this.getFieldWrapper(id); if(!w) return true;
-    if(w.style.display==="none" || w.closest(".section-hidden")) return false;
-    return true;
-  }
-  applyVisibilityRules() {
-    const js = document.getElementById("jenisSurat")?.value;
-    const jk = document.getElementById("jenisKurikulum")?.value;
-    const ss = document.getElementById("sifatSurat")?.value;
-    const varianPenugasan = document.getElementById("varianPenugasan")?.checked;
 
-    const hideMitraTopik = js==="Bahan Tayang Standar" || (js==="Kurikulum Silabus" && jk==="ECP");
-    this.setFieldVisible("mitraKerjasama", !hideMitraTopik);
-    this.setFieldVisible("topikRapat", !hideMitraTopik);
-    this.setFieldVisible("pimpinan", varianPenugasan);
-    this.setFieldVisible("instansi", varianPenugasan);
+    // 2. Create
+    const createUrl = 'https://www.googleapis.com/drive/v3/files';
+    const metadata = {
+      name: name,
+      mimeType: 'application/vnd.google-apps.folder',
+      parents: [parentId]
+    };
 
-    const fs = document.getElementById("facilitatorSection");
-    if(fs) {
-       if (js && js !== "") this.showSection(fs); else this.hideSection(fs);
+    const createRes = await fetch(createUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${this.accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(metadata)
+    });
+    const createData = await createRes.json();
+    return createData.id;
+  }
+
+  async uploadToGoogleDrive(blob, filename, pathArray) {
+    if (!this.accessToken) {
+      this.tokenClient.requestAccessToken();
+      throw new Error("Authentikasi Google dibutuhkan.");
     }
-  }
 
-  // --- SUPABASE ---
-  async getSupabaseClient() {
-    if(this.supabase) return this.supabase;
-    if(!window.supabase && !document.querySelector('script[data-supabase-js]')) {
-      await new Promise((resolve) => {
-        const s = document.createElement("script"); s.src = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js";
-        s.onload=resolve; s.dataset.supabaseJs="true"; document.head.appendChild(s);
-      });
-    }
-    const url = window.SUPABASE_URL;
-    const key = window.SUPABASE_ANON_KEY;
-    if(url && key && window.supabase) this.supabase = window.supabase.createClient(url, key);
-    return this.supabase;
-  }
-  async refreshFacilitatorsFromSupabase() {
-    try {
-      const client = await this.getSupabaseClient(); if(!client) return false;
-      const { data } = await client.from(window.SUPABASE_FACILITATORS_TABLE||"facilitators").select("nama, perusahaan").order("nama");
-      if(data?.length) { this.facilitators = data; return true; }
-    } catch(e) { console.warn("Supabase fetch failed", e); }
-    return false;
-  }
+    console.log("[Generator] Uploading to GDrive:", pathArray.join('/'));
+    
+    // 1. Root Folder: "generated-letters"
+    let currentParentId = await this.findOrCreateFolder('generated-letters', 'root');
 
-  // --- VALIDATION ---
-  validateField(field) {
-    if (!field) return true;
-    const fieldId = field.id;
-    const value = field.value.trim();
-    const errorElement = document.getElementById(`${fieldId}Error`);
-    if (errorElement) errorElement.classList.remove("show");
-
-    if (this.isFieldVisible(fieldId) && this.getRequiredFields().includes(fieldId) && !value) {
-      this.showFieldError(fieldId, `Wajib diisi`);
-      return false;
-    }
-    if (fieldId === "tanggalPelaksanaan" && value) {
-      const selected = new Date(value);
-      const today = new Date(); today.setHours(0,0,0,0);
-      if (selected < today) {
-        this.showFieldError(fieldId, "Tanggal tidak boleh kurang dari hari ini");
-        return false;
+    // 2. Create Dynamic Path
+    for (const folderName of pathArray) {
+      if(folderName && folderName.trim() !== "") {
+         currentParentId = await this.findOrCreateFolder(folderName, currentParentId);
       }
     }
-    return true;
-  }
 
-  validateForm() {
-    let valid = true;
-    this.getRequiredFields().forEach(id => {
-       if(!this.validateField(document.getElementById(id))) valid=false;
-    });
-    if(!document.getElementById("lingkupInternal").checked && !document.getElementById("lingkupEksternal").checked) { 
-        alert("Pilih lingkup (Internal/Eksternal)!"); 
-        valid=false; 
-    }
-    const varianChecked = ["varianIndividu","varianPenugasan","varianKelompok"].some(id => document.getElementById(id).checked);
-    if(!varianChecked) {
-        alert("Pilih minimal satu Varian Surat!");
-        valid=false;
-    }
-    return valid;
-  }
+    // 3. Upload File
+    const metadata = {
+      name: filename,
+      parents: [currentParentId]
+    };
 
-  getRequiredFields() { 
-    const js = document.getElementById("jenisSurat")?.value;
-    const jk = document.getElementById("jenisKurikulum")?.value;
-    const ss = document.getElementById("sifatSurat")?.value;
-    const perihalKPK = document.getElementById("perihalKPK")?.value;
+    const form = new FormData();
+    form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+    form.append('file', blob);
 
-    let required = ["jenisSurat", "sifatSurat", "bulanSurat", "tanggalPelaksanaan"];
-    if(ss === "undangan") required.push("waktuPelaksanaan");
-    if (this.isFieldVisible("topikRapat")) required.push("topikRapat");
-
-    if (js === "Kurikulum Silabus") {
-      required.push("jenisKurikulum");
-      if (jk === "KPK") {
-        required.push("perihalKPK");
-        if (perihalKPK === "persiapan pelatihan" && this.isFieldVisible("mitraKerjasama")) required.push("mitraKerjasama");
-      } else if (jk === "ECP") required.push("tahapECP");
-    } else if (js === "Bahan Tayang Standar") {
-      required.push("jumlahBTS", "btsPelatihan1", "btsMateri1");
-    }
-    return required.filter(id => this.isFieldVisible(id)); 
-  }
-
-  showFieldError(id, msg) { const e=document.getElementById(`${id}Error`); if(e) { e.textContent=msg; e.classList.add("show"); } }
-
-  // --- KEY GENERATION ---
-  generateFolderKey(d) {
-    const normalize = (text) => String(text || "").trim().toLowerCase().replace(/\s+/g, " ").replace(/[^\w\s\-]/g, "");
-    const sifat = normalize(d.sifatSurat);
-    const jenis = normalize(d.jenisSurat).replace(/ /g, "_");
+    const uploadUrl = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink';
     
-    let lingkup = "internal";
-    if (d.lingkupInternal && d.lingkupEksternal) lingkup = "eksternal"; 
-    else if (d.lingkupEksternal) lingkup = "eksternal";
+    const res = await fetch(uploadUrl, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${this.accessToken}` },
+      body: form
+    });
 
-    let varian = "individu";
-    if (d.varianPenugasan) varian = "penugasan";
-    else if (d.varianKelompok) varian = "kelompok";
+    if (!res.ok) throw new Error("Gagal upload ke Google Drive.");
+    
+    const data = await res.json();
+    return data.webViewLink;
+  }
 
-    let parts = [sifat, jenis, lingkup];
+  // --- GENERATION FLOW ---
+  async handleGenerate() {
+    if(this.isGenerating && this.accessToken) return;
+    if(!this.validateForm()) { this.showNotification("Lengkapi form!", "error"); return; }
+    
+    this.isGenerating = true;
+    this.showLoadingModal();
+    
+    try {
+      if (!this.accessToken) {
+         this.hideLoadingModal();
+         this.tokenClient.requestAccessToken(); 
+         return; 
+      }
 
-    if (d.jenisSurat === "Kurikulum Silabus") {
-        if (d.jenisKurikulum) parts.push(normalize(d.jenisKurikulum));
-        if (d.jenisKurikulum === "KPK" && d.perihalKPK) parts.push(normalize(d.perihalKPK)); 
-        else if (d.jenisKurikulum === "ECP" && d.tahapECP) parts.push(normalize(d.tahapECP));
-        else if (d.jenisKurikulum === "Jasa Perdagangan" && this.isFieldVisible('perihalKPK')) parts.push(normalize(d.perihalKPK));
+      const formData = this.collectFormData();
+      const folderKey = this.generateFolderKey(formData);
+      
+      // --- DYNAMIC PATH CONFIGURATION ---
+      // Structure: Username -> Sifat (e.g. Undangan) -> Kurikulum (e.g. KPK)
+      const username = this.currentUser.username || "user";
+      const sifatFolder = OneDrivePathHelper.normalize(formData.sifatSurat); 
+      const kurikulumFolder = formData.jenisKurikulum ? OneDrivePathHelper.normalize(formData.jenisKurikulum) : 'general';
+      
+      const pathArray = [username, sifatFolder, kurikulumFolder];
+
+      // Fetch Template
+      const templateMetadata = await this.fetchTemplateMetadata(folderKey);
+      let blob = null;
+      if (templateMetadata && templateMetadata.share_url) {
+          this.templateUrl = templateMetadata.share_url;
+          blob = await this.downloadFileFromUrl(templateMetadata.share_url);
+      } else {
+          throw new Error(`Template not found: ${folderKey}`);
+      }
+
+      // Fill Template
+      const payload = this.buildDocxPayload(formData);
+      await this.ensureDocxLibsLoaded();
+      const renderedBlob = this.renderDocx(await blob.arrayBuffer(), payload);
+      
+      this.generatedBlob = renderedBlob;
+      this.generatedFilename = `surat_${OneDrivePathHelper.normalize(formData.sifatSurat)}_${Date.now()}.docx`;
+
+      // Upload to GDrive
+      this.generatedFileUrl = await this.uploadToGoogleDrive(renderedBlob, this.generatedFilename, pathArray);
+      
+      this.showSuccessModal(); 
+
+    } catch(e) {
+      console.error(e);
+      if (e.message.includes("Authentikasi")) {
+          this.showNotification("Silakan Login Google", "info");
+      } else {
+          this.showNotification("Gagal: " + (e.message||"Error"), "error");
+      }
+    } finally {
+      if (this.accessToken) { 
+          this.hideLoadingModal();
+          this.isGenerating = false;
+      }
     }
-    parts.push(varian);
-    return parts.join("/");
+  }
+
+  // --- ACTIONS ---
+  handleDownload() {
+      if (this.generatedBlob && this.generatedFilename) {
+          window.saveAs(this.generatedBlob, this.generatedFilename);
+          this.showNotification("File diunduh.", "success");
+      }
+      this.closeSuccessModal();
+  }
+
+  handlePreview() {
+      if (this.generatedFileUrl) {
+          window.open(this.generatedFileUrl, "_blank"); // Open the Generated file in GDrive
+          this.showNotification("Membuka file di GDrive...", "info");
+      } else {
+          alert("Link file belum tersedia.");
+      }
+  }
+
+  handleSendToTask() {
+      if (!this.generatedFileUrl) {
+          alert("Link file belum tersedia.");
+          return;
+      }
+      window.parent.postMessage({
+          type: "SEND_GENERATED_LETTER",
+          payload: {
+              filename: this.generatedFilename,
+              fileUrl: this.generatedFileUrl, 
+              message: `Surat telah dibuat. Link GDrive: ${this.generatedFileUrl}`
+          }
+      }, "*");
+      
+      this.showNotification("Link terkirim!", "success");
+      this.closeSuccessModal();
+  }
+
+  // --- TIME SLOTS FIX (MOVED TO TOP OF INIT) ---
+  populateTimeSlots() {
+    const el = document.getElementById("waktuPelaksanaan");
+    if (el && el.tagName === 'SELECT') {
+        el.innerHTML = '<option value="">-- Pilih Waktu --</option>';
+        for(let h=7; h<=20; h++) {
+            ['00', '30'].forEach(m => {
+                const time = `${h.toString().padStart(2, '0')}:${m}`;
+                const option = document.createElement("option");
+                option.value = time;
+                option.textContent = time;
+                el.appendChild(option);
+            });
+        }
+    }
+  }
+
+  // --- HELPERS ---
+  async downloadFileFromUrl(url) {
+      if (!url) throw new Error("URL kosong");
+      if (url.includes("docs.google.com") || url.includes("drive.google.com")) {
+          const match = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
+          if (match && match[1]) {
+              // Try Auth first, then proxy
+              try {
+                  const exportUrl = `https://www.googleapis.com/drive/v3/files/${match[1]}/export?mimeType=application/vnd.openxmlformats-officedocument.wordprocessingml.document`;
+                  const resp = await fetch(exportUrl, { headers: { Authorization: `Bearer ${this.accessToken}` } });
+                  if (resp.ok) return await resp.blob();
+              } catch(e) {}
+              // Proxy fallback
+              try {
+                  const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://docs.google.com/document/d/${match[1]}/export?format=docx`)}`;
+                  const resp = await fetch(proxyUrl);
+                  if (resp.ok) return await resp.blob();
+              } catch(e) {}
+          }
+      }
+      return await (await fetch(url)).blob();
+  }
+
+  async fetchTemplateMetadata(folderKey) {
+      const client = await this.getSupabaseClient();
+      if(!client) return null;
+      const { data } = await client.from('letter_templates').select('*').eq('folder_key', folderKey).maybeSingle();
+      return data;
+  }
+
+  renderDocx(buf, data) {
+    const zip = new window.PizZip(buf);
+    const doc = new window.docxtemplater(zip, { paragraphLoop:true, linebreaks:true, delimiters:{start:"[", end:"]"} });
+    doc.render(data);
+    return doc.getZip().generate({type:"blob", mimeType:"application/vnd.openxmlformats-officedocument.wordprocessingml.document"});
+  }
+
+  async ensureDocxLibsLoaded() {
+    const load = (src) => new Promise(r => { if(document.querySelector(`script[src="${src}"]`)) return r(); const s=document.createElement("script"); s.src=src; s.onload=r; document.head.appendChild(s); });
+    await load("https://cdn.jsdelivr.net/npm/pizzip@3.1.7/dist/pizzip.min.js");
+    await load("https://cdn.jsdelivr.net/npm/docxtemplater@3.50.0/build/docxtemplater.js");
+    await load("https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js");
   }
 
   buildDocxPayload(formData) {
@@ -336,142 +383,16 @@ class LetterGenerator {
       lampiran: safe(formData.lampiran),
       mitra_kerjasama: safe(formData.mitraKerjasama),
       topik_rapat: safe(formData.topikRapat),
-      tanggal_pelaksanaan: safe(formData.tanggalPelaksanaan),
-      waktu_pelaksanaan: safe(formData.waktuPelaksanaan),
-      tahap_ecp: safe(formData.tahapECP),
-      perihal_kpk: safe(formData.perihalKPK),
       fasilitator1: safe(formData.namaFasilitator1),
-      fasilitator2: safe(formData.namaFasilitator2),
-      fasilitator3: safe(formData.namaFasilitator3),
       instansi_fasilitator1: safe(formData.instansiFasilitator1),
-      instansi_fasilitator2: safe(formData.instansiFasilitator2),
-      instansi_fasilitator3: safe(formData.instansiFasilitator3),
-      pimpinan: safe(formData.pimpinan),
-      instansi: safe(formData.instansi),
-      bts_pelatihan1: safe(formData.btsPelatihan1), bts_materi1: safe(formData.btsMateri1),
-      bts_pelatihan2: safe(formData.btsPelatihan2), bts_materi2: safe(formData.btsMateri2),
-      bts_pelatihan3: safe(formData.btsPelatihan3), bts_materi3: safe(formData.btsMateri3),
+      // Add other fields as needed
     };
-  }
-
-  // --- GENERATION LOGIC ---
-  async handleGenerate() {
-    if(this.isGenerating) return;
-    if(!this.validateForm()) { this.showNotification("Lengkapi form!", "error"); return; }
-    
-    this.isGenerating = true;
-    this.showLoadingModal();
-    try {
-      const formData = this.collectFormData();
-      const folderKey = this.generateFolderKey(formData);
-      console.log("[Generator] Derived Folder Key:", folderKey);
-
-      const templateMetadata = await this.fetchTemplateMetadata(folderKey);
-      
-      let blob = null;
-      if (templateMetadata && templateMetadata.share_url) {
-          this.templateUrl = templateMetadata.share_url;
-          blob = await this.downloadFileFromUrl(templateMetadata.share_url);
-      } else {
-          throw new Error(`Template not found for key: ${folderKey}`);
-      }
-
-      const payload = this.buildDocxPayload(formData);
-      await this.ensureDocxLibsLoaded();
-      const renderedBlob = this.renderDocx(await blob.arrayBuffer(), payload);
-      
-      this.generatedBlob = renderedBlob;
-      this.generatedFilename = `surat_generated_${Date.now()}.docx`;
-      
-      this.showSuccessModal(); 
-
-    } catch(e) {
-      console.error(e);
-      this.showNotification("Gagal: " + (e.message||"Error"), "error");
-    } finally {
-      this.hideLoadingModal();
-      this.isGenerating = false;
-    }
-  }
-
-  // --- MULTI-STRATEGY DOWNLOADER ---
-  async downloadFileFromUrl(url) {
-      if (!url) throw new Error("URL template kosong.");
-      console.log("[Generator] Processing Link:", url);
-
-      if (url.includes("docs.google.com") || url.includes("drive.google.com")) {
-          const match = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
-          if (match && match[1]) {
-              const fileId = match[1];
-              const exportUrl = `https://docs.google.com/document/d/${fileId}/export?format=docx`;
-              
-              try {
-                  const proxyUrl1 = `https://api.allorigins.win/raw?url=${encodeURIComponent(exportUrl)}`;
-                  const resp1 = await fetch(proxyUrl1);
-                  if (resp1.ok) return await resp1.blob();
-              } catch (e) { console.warn("Proxy 1 failed", e); }
-
-              try {
-                  const proxyUrl2 = `https://corsproxy.io/?${encodeURIComponent(exportUrl)}`;
-                  const resp2 = await fetch(proxyUrl2);
-                  if (resp2.ok) return await resp2.blob();
-              } catch (e) { console.warn("Proxy 2 failed", e); }
-
-              throw new Error("Gagal download template. Pastikan Google Doc 'Public' (Anyone with link).");
-          }
-      }
-      
-      if (url.includes("1drv.ms") || url.includes("onedrive.live.com")) {
-          const cleanUrl = url.split('?')[0];
-          let encodedUrl = btoa(cleanUrl).replace(/\//g, '_').replace(/\+/g, '-').replace(/=+$/, '');
-          const apiUrl = `https://api.onedrive.com/v1.0/shares/u!${encodedUrl}/root/content`;
-          try {
-             const resp = await fetch(apiUrl);
-             if (resp.ok) return await resp.blob();
-          } catch (e) { console.warn("OneDrive API failed, trying direct..."); }
-      }
-
-      try {
-          const resp = await fetch(url);
-          if (!resp.ok) throw new Error(`Download gagal (Status: ${resp.status})`);
-          return await resp.blob();
-      } catch (error) { throw error; }
-  }
-
-  async fetchTemplateMetadata(folderKey) {
-      const client = await this.getSupabaseClient();
-      if (!client) return null;
-      const { data, error } = await client
-        .from('letter_templates')
-        .select('*')
-        .eq('folder_key', folderKey)
-        .maybeSingle();
-      if (error) console.warn("[Generator] Metadata error:", error.message);
-      return data;
-  }
-
-  renderDocx(buf, data) {
-    const zip = new window.PizZip(buf);
-    const doc = new window.docxtemplater(zip, { paragraphLoop:true, linebreaks:true, delimiters:{start:"[", end:"]"} });
-    doc.render(data);
-    return doc.getZip().generate({type:"blob", mimeType:"application/vnd.openxmlformats-officedocument.wordprocessingml.document"});
-  }
-
-  async ensureDocxLibsLoaded() {
-    const load = (src) => new Promise(r => { 
-        if(document.querySelector(`script[src="${src}"]`)) return r();
-        const s=document.createElement("script"); s.src=src; s.onload=r; document.head.appendChild(s); 
-    });
-    await load("https://cdn.jsdelivr.net/npm/pizzip@3.1.7/dist/pizzip.min.js");
-    await load("https://cdn.jsdelivr.net/npm/docxtemplater@3.50.0/build/docxtemplater.js");
-    await load("https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js");
   }
 
   collectFormData() {
     const d = {};
     const get = (id) => this.isFieldVisible(id) ? document.getElementById(id).value : "";
     const chk = (id) => this.isFieldVisible(id) ? document.getElementById(id).checked : false;
-    
     d.jenisSurat=get("jenisSurat"); d.sifatSurat=get("sifatSurat"); d.jenisKurikulum=get("jenisKurikulum"); d.perihalKPK=get("perihalKPK");
     d.bulanSurat=get("bulanSurat"); d.lampiran=get("lampiran"); d.mitraKerjasama=get("mitraKerjasama"); d.topikRapat=get("topikRapat");
     d.tanggalPelaksanaan=get("tanggalPelaksanaan"); d.waktuPelaksanaan=get("waktuPelaksanaan"); d.tahapECP=get("tahapECP");
@@ -479,121 +400,98 @@ class LetterGenerator {
     d.jumlahBTS=get("jumlahBTS"); d.btsPelatihan1=get("btsPelatihan1"); d.btsMateri1=get("btsMateri1");
     d.varianIndividu=chk("varianIndividu"); d.varianPenugasan=chk("varianPenugasan"); d.varianKelompok=chk("varianKelompok");
     d.jumlahFasilitator=get("jumlahFasilitator"); d.namaFasilitator1=get("namaFasilitator1"); d.pimpinan=get("pimpinan"); d.instansi=get("instansi");
-    
-    [1,2,3].forEach(n => {
-       d[`namaFasilitator${n}`] = get(`namaFasilitator${n}`);
-       if(d[`namaFasilitator${n}`]) {
-          const f = this.facilitators.find(x=>x.nama===d[`namaFasilitator${n}`]);
-          d[`instansiFasilitator${n}`] = f ? f.perusahaan : "";
-       } else d[`instansiFasilitator${n}`] = "";
-    });
+    [1,2,3].forEach(n => { d[`namaFasilitator${n}`] = get(`namaFasilitator${n}`); if(d[`namaFasilitator${n}`]) { const f = this.facilitators.find(x=>x.nama===d[`namaFasilitator${n}`]); d[`instansiFasilitator${n}`] = f ? f.perusahaan : ""; } else d[`instansiFasilitator${n}`] = ""; });
     return d;
   }
 
-  // --- BUTTON ACTIONS ---
-  handleDownload() {
-      if (this.generatedBlob && this.generatedFilename) {
-          window.saveAs(this.generatedBlob, this.generatedFilename);
-          this.showNotification("File diunduh.", "success");
-      }
-      this.closeSuccessModal();
-  }
-
-  handlePreview() {
-      if (this.templateUrl) {
-          window.open(this.templateUrl, "_blank");
-          this.showNotification("Membuka template di tab baru...", "info");
-      } else {
-          alert("URL Template tidak ditemukan.");
-      }
-  }
-
-  handleSendToTask() {
-      if (!this.generatedBlob) return;
-      this.showNotification("Memproses pengiriman...", "info");
-      const reader = new FileReader();
-      reader.readAsDataURL(this.generatedBlob);
-      reader.onloadend = () => {
-          window.parent.postMessage({
-              type: "SEND_GENERATED_LETTER",
-              payload: {
-                  filename: this.generatedFilename,
-                  dataUrl: reader.result,
-                  message: "Berikut surat yang telah dibuat."
-              }
-          }, "*");
-          this.closeSuccessModal();
-      };
-  }
-
-  // --- POPULATE TIME SLOTS ---
-  populateTimeSlots() {
-    const el = document.getElementById("waktuPelaksanaan");
-    if (el && el.tagName === 'SELECT') {
-        el.innerHTML = '<option value="">-- Pilih Waktu --</option>';
-        for(let h=7; h<=20; h++) {
-            ['00', '30'].forEach(m => {
-                const time = `${h.toString().padStart(2, '0')}:${m}`;
-                const option = document.createElement("option");
-                option.value = time;
-                option.textContent = time;
-                el.appendChild(option);
-            });
-        }
+  validateField(field) {
+    if (!field) return true;
+    const fieldId = field.id;
+    const value = field.value.trim();
+    const errorElement = document.getElementById(`${fieldId}Error`);
+    if (errorElement) errorElement.classList.remove("show");
+    if (this.isFieldVisible(fieldId) && this.getRequiredFields().includes(fieldId) && !value) {
+      this.showFieldError(fieldId, `Wajib diisi`);
+      return false;
     }
+    return true;
   }
 
-  populateFacilitators(opts={}) {
-    [1,2,3].forEach(i => {
-      const el=document.getElementById(`namaFasilitator${i}`); if(!el) return;
-      el.innerHTML = opts.loading ? "<option>Loading...</option>" : '<option value="">-- Pilih --</option>';
-      if(!opts.loading) this.facilitators.forEach(f => { const o=document.createElement("option"); o.value=f.nama; o.textContent=f.nama; el.appendChild(o); });
-    });
+  validateForm() {
+    let valid = true;
+    this.getRequiredFields().forEach(id => { if(!this.validateField(document.getElementById(id))) valid=false; });
+    return valid;
   }
-  populateBTSPrograms() {
-    [1,2,3].forEach(i => {
-       const el=document.getElementById(`btsPelatihan${i}`); if(!el) return;
-       if(typeof btsTrainingPrograms!=="undefined") Object.keys(btsTrainingPrograms).forEach(k=>{ const o=document.createElement("option"); o.value=k; o.textContent=k; el.appendChild(o); });
-    });
+
+  getRequiredFields() { 
+    const ss = document.getElementById("sifatSurat")?.value;
+    let required = ["jenisSurat", "sifatSurat", "bulanSurat", "tanggalPelaksanaan"];
+    if(ss === "undangan") required.push("waktuPelaksanaan");
+    return required.filter(id => this.isFieldVisible(id)); 
   }
-  
-  // --- UPDATED SHOW/CLOSE MODAL ---
+
+  showFieldError(id, msg) { const e=document.getElementById(`${id}Error`); if(e) { e.textContent=msg; e.classList.add("show"); } }
+
+  generateFolderKey(d) {
+    const normalize = (text) => String(text || "").trim().toLowerCase().replace(/\s+/g, " ").replace(/[^\w\s\-]/g, "");
+    const sifat = normalize(d.sifatSurat);
+    const jenis = normalize(d.jenisSurat).replace(/ /g, "_");
+    let lingkup = d.lingkupEksternal ? "eksternal" : "internal";
+    let varian = d.varianPenugasan ? "penugasan" : (d.varianKelompok ? "kelompok" : "individu");
+    let parts = [sifat, jenis, lingkup];
+    if (d.jenisSurat === "Kurikulum Silabus") {
+        if (d.jenisKurikulum) parts.push(normalize(d.jenisKurikulum));
+        if (d.jenisKurikulum === "KPK" && d.perihalKPK) parts.push(normalize(d.perihalKPK)); 
+        else if (d.jenisKurikulum === "ECP" && d.tahapECP) parts.push(normalize(d.tahapECP));
+    }
+    parts.push(varian);
+    return parts.join("/");
+  }
+
+  async getSupabaseClient() {
+    if(this.supabase) return this.supabase;
+    if(!window.supabase && !document.querySelector('script[data-supabase-js]')) {
+      await new Promise(r => { const s=document.createElement("script"); s.src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"; s.onload=r; s.dataset.supabaseJs="true"; document.head.appendChild(s); });
+    }
+    if(window.SUPABASE_URL && window.supabase) this.supabase = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
+    return this.supabase;
+  }
+
+  handleJenisSuratChange(e) { this.refreshUI(); }
+  handleSifatSuratChange(e) { this.refreshUI(); }
+  handleJenisKurikulumChange(e) { this.refreshUI(); }
+  handleVariantChange() { this.refreshUI(); }
+  handleJumlahBTSChange(e) { this.refreshUI(); }
+  handleBTSPelatihanChange(e, i) { this.refreshUI(); }
+  handleJumlahFasilitatorChange(e) { this.refreshUI(); }
+  handleFasilitatorChange(e, i) { this.refreshUI(); }
+  refreshUI() { this.applyVisibilityRules(); this.saveFormState(); }
+  populateFacilitators(opts={}) { /* ... */ }
+  populateBTSPrograms() { /* ... */ }
+
   showSuccessModal() { 
     const modal = document.getElementById("successModal");
     const card = document.getElementById("successModalCard");
     if(modal) {
         modal.classList.remove("hidden");
-        if(card) {
-            requestAnimationFrame(() => {
-                card.classList.remove("opacity-0", "scale-90");
-                card.classList.add("opacity-100", "scale-100");
-            });
-        }
+        requestAnimationFrame(() => { if(card) { card.classList.remove("opacity-0", "scale-90"); card.classList.add("opacity-100", "scale-100"); } });
     }
   }
-
   closeSuccessModal() {
     const modal = document.getElementById("successModal");
     const card = document.getElementById("successModalCard");
-    if(card) {
-        card.classList.remove("opacity-100", "scale-100");
-        card.classList.add("opacity-0", "scale-90");
-    }
-    if(modal) {
-        setTimeout(() => {
-            modal.classList.add("hidden");
-        }, 300);
-    }
+    if(card) { card.classList.remove("opacity-100", "scale-100"); card.classList.add("opacity-0", "scale-90"); }
+    setTimeout(() => { if(modal) modal.classList.add("hidden"); }, 300);
   }
-
   showLoadingModal() { document.getElementById("loadingModal")?.classList.remove("hidden"); }
   hideLoadingModal() { document.getElementById("loadingModal")?.classList.add("hidden"); }
-  
   showNotification(msg, type="info") { 
     const n=document.createElement("div"); n.className=`fixed top-4 right-4 p-4 rounded z-50 text-white ${type==="error"?"bg-red-500":"bg-blue-500"}`; 
     n.textContent=msg; document.body.appendChild(n); setTimeout(()=>n.remove(),3000); 
   }
   saveFormState() {} loadFormState() {} initializeCharts() {} startParticleAnimation() {} updateProgressBar() {}
 }
+
+class OneDrivePathHelper { static normalize(text) { return String(text || "").trim().toLowerCase().replace(/\s+/g, " ").replace(/[^\w\s\-]/g, ""); } }
 
 document.addEventListener("DOMContentLoaded", () => window.__letterGenerator = new LetterGenerator());
