@@ -244,7 +244,7 @@ class LetterGenerator {
     return data.webViewLink;
   }
 
-  // --- DRIVE HELPERS ---
+  // --- DRIVE HELPERS ---` 
   async fetchTemplateFromDrive(folderKey) {
     console.log("[Generator] Searching template for key:", folderKey);
     // 1. Find Root Template Folder
@@ -314,25 +314,29 @@ class LetterGenerator {
       const kurikulumFolder = formData.jenisKurikulum ? OneDrivePathHelper.normalize(formData.jenisKurikulum) : 'general';
       const pathArray = [username, sifatFolder, kurikulumFolder];
 
-      const templateMetadata = await this.fetchTemplateMetadata(folderKey);
-      let blob = null;
-      if (templateMetadata && templateMetadata.share_url) {
-          this.templateUrl = templateMetadata.share_url;
-          blob = await this.downloadFileFromUrl(templateMetadata.share_url);
-      } else {
-          throw new Error(`Template not found: ${folderKey}`);
-      }
+      // Fetch template directly from Google Drive folder "templates_surat"
+      console.log("[Generator] Fetching template for key:", folderKey);
+      let blob = await this.fetchTemplateFromDrive(folderKey);
+      console.log("[Generator] Template blob received:", blob?.size, "bytes");
 
       const payload = this.buildDocxPayload(formData);
+      console.log("[Generator] Payload built:", payload);
+      
       await this.ensureDocxLibsLoaded();
+      console.log("[Generator] DOCX libs loaded");
+      
       const renderedBlob = this.renderDocx(await blob.arrayBuffer(), payload);
+      console.log("[Generator] Document rendered:", renderedBlob?.size, "bytes");
       
       this.generatedBlob = renderedBlob;
       this.generatedFilename = `surat_${OneDrivePathHelper.normalize(formData.sifatSurat)}_${Date.now()}.docx`;
 
+      console.log("[Generator] Uploading to GDrive...");
       this.generatedFileUrl = await this.uploadToGoogleDrive(renderedBlob, this.generatedFilename, pathArray);
+      console.log("[Generator] Upload complete! URL:", this.generatedFileUrl);
       
-      this.showSuccessModal(); 
+      this.showSuccessModal();
+      console.log("[Generator] Success modal shown"); 
 
     } catch(e) {
       console.error(e);
