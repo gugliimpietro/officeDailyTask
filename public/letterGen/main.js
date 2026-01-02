@@ -8,12 +8,23 @@ class LetterGenerator {
     this.generatedFilename = null;
     this.generatedFileUrl = null; 
     this.templateUrl = null;      
-    this.currentUser = { username: "sadiro" }; // TODO: Make this dynamic from your Auth system
+    this.currentUser = { username: "sadiro" }; 
     
-    // --- GOOGLE CONFIG ---
-    this.GOOGLE_CLIENT_ID = 'YOUR_GOOGLE_CLIENT_ID'; // <--- PASTE YOUR CLIENT ID HERE
+    // ============================================================
+    // ⚠️ IMPORTANT: PASTE YOUR REAL GOOGLE CLIENT ID BELOW
+    // Go to https://console.cloud.google.com/apis/credentials
+    // ============================================================
+    this.GOOGLE_CLIENT_ID = '15549700374-urha9ddap4kb61q6is6n95kq752p2g12.apps.googleusercontent.com'; 
+    
     this.tokenClient = null;
     this.accessToken = null;
+
+    // Default data if database is empty
+    this.defaultFacilitators = [
+        { nama: "Fasilitator 1", perusahaan: "Instansi A" },
+        { nama: "Fasilitator 2", perusahaan: "Instansi B" }
+    ];
+    this.facilitators = [];
 
     this.init().catch((err) => console.error("Init error:", err));
   }
@@ -34,25 +45,35 @@ class LetterGenerator {
   }
 
   async init() {
-    // 1. POPULATE TIME SLOTS FIRST (Critical Fix)
-    this.populateTimeSlots();
+    // 1. Validate Config
+    if (this.GOOGLE_CLIENT_ID.includes('YOUR_GOOGLE_CLIENT_ID')) {
+        alert("SETUP REQUIRED: Buka main.js dan masukkan Google Client ID Anda di baris 17!");
+    }
 
+    // 2. Setup UI
+    this.populateTimeSlots();
     this.initializeUI();
     this.initGoogleAuth(); 
-    
-    this.fallbackFacilitators = typeof facilitators !== "undefined" && Array.isArray(facilitators) ? facilitators.slice() : [];
-    this.facilitators = [];
-    
     this.setupEventListeners();
     this.loadFormState();
-    this.initializeCharts();
-    this.startParticleAnimation();
+    
+    try { this.initializeCharts(); } catch(e) {}
+    try { this.startParticleAnimation(); } catch(e) {}
 
+    // 3. Load Data (With Fallback)
     this.populateFacilitators({ loading: true });
+    
+    // Try Supabase, if fail use defaults
     const loaded = await this.refreshFacilitatorsFromSupabase();
-    if (!loaded) this.facilitators = this.fallbackFacilitators.slice();
+    if (!loaded || this.facilitators.length === 0) {
+        console.warn("Using default facilitators");
+        this.facilitators = this.defaultFacilitators;
+    }
+    
     this.populateFacilitators();
     this.populateBTSPrograms();
+    
+    // 4. Force Update UI Rules
     this.applyVisibilityRules();
   }
 
@@ -70,20 +91,68 @@ class LetterGenerator {
   // --- GOOGLE AUTH ---
   initGoogleAuth() {
     if (window.google) {
-      this.tokenClient = google.accounts.oauth2.initTokenClient({
-        client_id: this.GOOGLE_CLIENT_ID,
-        scope: 'https://www.googleapis.com/auth/drive.file',
-        callback: (tokenResponse) => {
-          if (tokenResponse && tokenResponse.access_token) {
-            this.accessToken = tokenResponse.access_token;
-            console.log("Google Auth Success");
-            if (this.isGenerating) this.handleGenerate();
-          }
-        },
-      });
+      try {
+          this.tokenClient = google.accounts.oauth2.initTokenClient({
+            client_id: this.GOOGLE_CLIENT_ID,
+            scope: 'https://www.googleapis.com/auth/drive.file',
+            callback: (tokenResponse) => {
+              if (tokenResponse && tokenResponse.access_token) {
+                this.accessToken = tokenResponse.access_token;
+                console.log("Google Auth Success");
+                if (this.isGenerating) this.handleGenerate();
+              }
+            },
+          });
+      } catch(e) {
+          console.error("GSI Error:", e);
+      }
     } else {
-      console.error("GSI script missing");
+      console.error("GSI script not loaded");
     }
+  }
+
+  // --- LISTENERS ---
+  // --- DATA LOADING ---
+  async refreshFacilitatorsFromSupabase() {
+    try {
+      const client = await this.getSupabaseClient(); 
+      if(!client) return false;
+      
+      const table = window.SUPABASE_FACILITATORS_TABLE || "facilitators";
+      const { data, error } = await client.from(table).select("nama, perusahaan").order("nama");
+      
+      if(error) throw error;
+      
+      if(data?.length) { 
+          this.facilitators = data; 
+          console.log("[Generator] Loaded facilitators:", data.length);
+          return true; 
+      }
+    } catch(e) { 
+        console.warn("Supabase fetch failed:", e); 
+    }
+    return false;
+  }
+
+  populateFacilitators(opts={}) {
+    [1,2,3].forEach(i => {
+      const el=document.getElementById(`namaFasilitator${i}`); if(!el) return;
+      
+      // Keep selected value if any
+      const currentVal = el.value;
+      
+      el.innerHTML = opts.loading ? "<option>Loading...</option>" : '<option value="">-- Pilih --</option>';
+      if(!opts.loading) {
+          this.facilitators.forEach(f => { 
+              const o=document.createElement("option"); 
+              o.value=f.nama; 
+              o.textContent=f.nama; 
+              el.appendChild(o); 
+          });
+          // Restore value if still valid
+          if(currentVal) el.value = currentVal;
+      }
+    });
   }
 
   setupEventListeners() {
@@ -121,35 +190,22 @@ class LetterGenerator {
     });
   }
 
-  // --- GOOGLE DRIVE FOLDER LOGIC ---
+  // --- GOOGLE DRIVE LOGIC ---
   async findOrCreateFolder(name, parentId = 'root') {
-    // 1. Search
     const query = `mimeType='application/vnd.google-apps.folder' and name='${name}' and '${parentId}' in parents and trashed=false`;
     const searchUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}`;
     
-    const searchRes = await fetch(searchUrl, {
-      headers: { Authorization: `Bearer ${this.accessToken}` }
-    });
+    const searchRes = await fetch(searchUrl, { headers: { Authorization: `Bearer ${this.accessToken}` } });
     const searchData = await searchRes.json();
 
-    if (searchData.files && searchData.files.length > 0) {
-      return searchData.files[0].id; 
-    }
+    if (searchData.files && searchData.files.length > 0) return searchData.files[0].id; 
 
-    // 2. Create
     const createUrl = 'https://www.googleapis.com/drive/v3/files';
-    const metadata = {
-      name: name,
-      mimeType: 'application/vnd.google-apps.folder',
-      parents: [parentId]
-    };
+    const metadata = { name: name, mimeType: 'application/vnd.google-apps.folder', parents: [parentId] };
 
     const createRes = await fetch(createUrl, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${this.accessToken}`,
-        'Content-Type': 'application/json'
-      },
+      headers: { Authorization: `Bearer ${this.accessToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(metadata)
     });
     const createData = await createRes.json();
@@ -163,29 +219,20 @@ class LetterGenerator {
     }
 
     console.log("[Generator] Uploading to GDrive:", pathArray.join('/'));
-    
-    // 1. Root Folder: "generated-letters"
     let currentParentId = await this.findOrCreateFolder('generated-letters', 'root');
 
-    // 2. Create Dynamic Path
     for (const folderName of pathArray) {
       if(folderName && folderName.trim() !== "") {
          currentParentId = await this.findOrCreateFolder(folderName, currentParentId);
       }
     }
 
-    // 3. Upload File
-    const metadata = {
-      name: filename,
-      parents: [currentParentId]
-    };
-
+    const metadata = { name: filename, parents: [currentParentId] };
     const form = new FormData();
     form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
     form.append('file', blob);
 
     const uploadUrl = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink';
-    
     const res = await fetch(uploadUrl, {
       method: 'POST',
       headers: { Authorization: `Bearer ${this.accessToken}` },
@@ -193,9 +240,55 @@ class LetterGenerator {
     });
 
     if (!res.ok) throw new Error("Gagal upload ke Google Drive.");
-    
     const data = await res.json();
     return data.webViewLink;
+  }
+
+  // --- DRIVE HELPERS ---
+  async fetchTemplateFromDrive(folderKey) {
+    console.log("[Generator] Searching template for key:", folderKey);
+    // 1. Find Root Template Folder
+    const rootTemplateId = await this.findFolderId("templates_surat");
+    if (!rootTemplateId) throw new Error("Folder 'templates_surat' tidak ditemukan di Google Drive.");
+
+    // 2. Construct Path
+    const pathParts = folderKey.split("/");
+    const filename = `${pathParts.pop()}.docx`; // Last part is filename
+    const folderPath = pathParts;
+
+    // 3. Traverse
+    let currentParentId = rootTemplateId;
+    for (const folderName of folderPath) {
+        const navId = await this.findFolderId(folderName, currentParentId);
+        if (!navId) throw new Error(`Folder template tidak ditemukan: ${folderName}`);
+        currentParentId = navId;
+    }
+
+    // 4. Find File
+    const fileId = await this.findFileId(filename, currentParentId);
+    if (!fileId) throw new Error(`File template tidak ditemukan: ${filename}`);
+
+    return this.downloadFileBlob(fileId);
+  }
+
+  async findFolderId(name, parentId = 'root') {
+      const q = `mimeType='application/vnd.google-apps.folder' and name='${name}' and '${parentId}' in parents and trashed=false`;
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}`, { headers: { Authorization: `Bearer ${this.accessToken}` } });
+      const data = await res.json();
+      return (data.files && data.files.length > 0) ? data.files[0].id : null;
+  }
+
+  async findFileId(name, parentId) {
+      const q = `mimeType!='application/vnd.google-apps.folder' and name='${name}' and '${parentId}' in parents and trashed=false`;
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}`, { headers: { Authorization: `Bearer ${this.accessToken}` } });
+      const data = await res.json();
+      return (data.files && data.files.length > 0) ? data.files[0].id : null;
+  }
+
+  async downloadFileBlob(fileId) {
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, { headers: { Authorization: `Bearer ${this.accessToken}` } });
+      if (!res.ok) throw new Error("Gagal mengunduh file template.");
+      return await res.blob();
   }
 
   // --- GENERATION FLOW ---
@@ -216,15 +309,11 @@ class LetterGenerator {
       const formData = this.collectFormData();
       const folderKey = this.generateFolderKey(formData);
       
-      // --- DYNAMIC PATH CONFIGURATION ---
-      // Structure: Username -> Sifat (e.g. Undangan) -> Kurikulum (e.g. KPK)
       const username = this.currentUser.username || "user";
       const sifatFolder = OneDrivePathHelper.normalize(formData.sifatSurat); 
       const kurikulumFolder = formData.jenisKurikulum ? OneDrivePathHelper.normalize(formData.jenisKurikulum) : 'general';
-      
       const pathArray = [username, sifatFolder, kurikulumFolder];
 
-      // Fetch Template
       const templateMetadata = await this.fetchTemplateMetadata(folderKey);
       let blob = null;
       if (templateMetadata && templateMetadata.share_url) {
@@ -234,7 +323,6 @@ class LetterGenerator {
           throw new Error(`Template not found: ${folderKey}`);
       }
 
-      // Fill Template
       const payload = this.buildDocxPayload(formData);
       await this.ensureDocxLibsLoaded();
       const renderedBlob = this.renderDocx(await blob.arrayBuffer(), payload);
@@ -242,7 +330,6 @@ class LetterGenerator {
       this.generatedBlob = renderedBlob;
       this.generatedFilename = `surat_${OneDrivePathHelper.normalize(formData.sifatSurat)}_${Date.now()}.docx`;
 
-      // Upload to GDrive
       this.generatedFileUrl = await this.uploadToGoogleDrive(renderedBlob, this.generatedFilename, pathArray);
       
       this.showSuccessModal(); 
@@ -273,7 +360,7 @@ class LetterGenerator {
 
   handlePreview() {
       if (this.generatedFileUrl) {
-          window.open(this.generatedFileUrl, "_blank"); // Open the Generated file in GDrive
+          window.open(this.generatedFileUrl, "_blank");
           this.showNotification("Membuka file di GDrive...", "info");
       } else {
           alert("Link file belum tersedia.");
@@ -298,7 +385,7 @@ class LetterGenerator {
       this.closeSuccessModal();
   }
 
-  // --- TIME SLOTS FIX (MOVED TO TOP OF INIT) ---
+  // --- DATA LOADING & POPULATION ---
   populateTimeSlots() {
     const el = document.getElementById("waktuPelaksanaan");
     if (el && el.tagName === 'SELECT') {
@@ -315,19 +402,74 @@ class LetterGenerator {
     }
   }
 
-  // --- HELPERS ---
+
+
+  // --- UI Helpers ---
+  handleJenisSuratChange(e) { this.refreshUI(); }
+  handleSifatSuratChange(e) { this.refreshUI(); }
+  handleJenisKurikulumChange(e) { this.refreshUI(); }
+  handleVariantChange() { this.refreshUI(); }
+  handleJumlahBTSChange(e) { this.refreshUI(); }
+  handleBTSPelatihanChange(e, i) { this.refreshUI(); }
+  handleJumlahFasilitatorChange(e) { this.refreshUI(); }
+  handleFasilitatorChange(e, i) { this.refreshUI(); }
+  
+  refreshUI() { this.applyVisibilityRules(); this.saveFormState(); }
+
+  applyVisibilityRules() {
+    const js = document.getElementById("jenisSurat")?.value;
+    const jk = document.getElementById("jenisKurikulum")?.value;
+    const ss = document.getElementById("sifatSurat")?.value;
+    const varianPenugasan = document.getElementById("varianPenugasan")?.checked;
+    const varianKelompok = document.getElementById("varianKelompok")?.checked;
+    const varianIndividu = document.getElementById("varianIndividu")?.checked;
+
+    const hideMitraTopik = js==="Bahan Tayang Standar" || (js==="Kurikulum Silabus" && jk==="ECP");
+    this.setFieldVisible("mitraKerjasama", !hideMitraTopik);
+    this.setFieldVisible("topikRapat", !hideMitraTopik);
+    this.setFieldVisible("pimpinan", varianPenugasan);
+    this.setFieldVisible("instansi", varianPenugasan);
+
+    const fs = document.getElementById("facilitatorSection");
+    if(fs) {
+       // Only show facilitator section if 'jenisSurat' is selected
+       if (js && js !== "") {
+           this.showSection(fs);
+       } else {
+           this.hideSection(fs);
+       }
+    }
+
+    // --- FACILITATOR LOGIC ---
+    // 1. Show 'Jumlah Fasilitator' dropdown ONLY if Kelompok
+    const jumlahSec = document.getElementById("jumlahFasilitatorSection");
+    if(varianKelompok) this.showSection(jumlahSec); else this.hideSection(jumlahSec);
+
+    // 2. Determine how many facilitators are active
+    let n = 0;
+    if (varianKelompok) {
+        n = parseInt(document.getElementById("jumlahFasilitator")?.value) || 0;
+    } else if (varianIndividu || varianPenugasan) {
+        n = 1;
+    }
+
+    // 3. Show/Hide sections 1, 2, 3
+    for(let i=1; i<=3; i++) {
+        const sec = document.getElementById(`fasilitator${i}Section`);
+        if (i <= n) this.showSection(sec); else this.hideSection(sec);
+    }
+  }
+
   async downloadFileFromUrl(url) {
       if (!url) throw new Error("URL kosong");
       if (url.includes("docs.google.com") || url.includes("drive.google.com")) {
           const match = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
           if (match && match[1]) {
-              // Try Auth first, then proxy
               try {
                   const exportUrl = `https://www.googleapis.com/drive/v3/files/${match[1]}/export?mimeType=application/vnd.openxmlformats-officedocument.wordprocessingml.document`;
                   const resp = await fetch(exportUrl, { headers: { Authorization: `Bearer ${this.accessToken}` } });
                   if (resp.ok) return await resp.blob();
               } catch(e) {}
-              // Proxy fallback
               try {
                   const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://docs.google.com/document/d/${match[1]}/export?format=docx`)}`;
                   const resp = await fetch(proxyUrl);
@@ -457,30 +599,40 @@ class LetterGenerator {
     return this.supabase;
   }
 
-  handleJenisSuratChange(e) { this.refreshUI(); }
-  handleSifatSuratChange(e) { this.refreshUI(); }
-  handleJenisKurikulumChange(e) { this.refreshUI(); }
-  handleVariantChange() { this.refreshUI(); }
-  handleJumlahBTSChange(e) { this.refreshUI(); }
-  handleBTSPelatihanChange(e, i) { this.refreshUI(); }
-  handleJumlahFasilitatorChange(e) { this.refreshUI(); }
-  handleFasilitatorChange(e, i) { this.refreshUI(); }
-  refreshUI() { this.applyVisibilityRules(); this.saveFormState(); }
-  populateFacilitators(opts={}) { /* ... */ }
+  // --- UI Helpers ---
+  getFieldWrapper(id) { const el=document.getElementById(id); return el ? (document.getElementById(`${id}Group`)||el.closest(".form-group")||el.parentElement) : null; }
+  setFieldVisible(id, vis) {
+    const w=this.getFieldWrapper(id); if(!w) return;
+    w.style.display = vis ? "" : "none";
+    if(!vis) { const el=document.getElementById(id); if(el) (el.type==="checkbox"?el.checked=false:el.value=""); }
+  }
+  isFieldVisible(id) { const w=this.getFieldWrapper(id); return w ? w.style.display!=="none" && !w.closest(".section-hidden") : true; }
+  
+  showSection(el) { if(el) { el.classList.remove("section-hidden"); el.classList.add("section-visible"); this.safeAnime({targets:el, opacity:[0,1], translateY:[-20,0], duration:500}); } }
+  hideSection(el) { if(el) { el.classList.remove("section-visible"); el.classList.add("section-hidden"); } }
+
   populateBTSPrograms() { /* ... */ }
 
   showSuccessModal() { 
     const modal = document.getElementById("successModal");
-    const card = document.getElementById("successModalCard");
     if(modal) {
         modal.classList.remove("hidden");
-        requestAnimationFrame(() => { if(card) { card.classList.remove("opacity-0", "scale-90"); card.classList.add("opacity-100", "scale-100"); } });
+        const card = document.getElementById("successModalCard"); 
+        if(card) {
+            requestAnimationFrame(() => {
+                card.classList.remove("opacity-0", "scale-90");
+                card.classList.add("opacity-100", "scale-100");
+            });
+        }
     }
   }
   closeSuccessModal() {
     const modal = document.getElementById("successModal");
     const card = document.getElementById("successModalCard");
-    if(card) { card.classList.remove("opacity-100", "scale-100"); card.classList.add("opacity-0", "scale-90"); }
+    if(card) {
+        card.classList.remove("opacity-100", "scale-100");
+        card.classList.add("opacity-0", "scale-90");
+    }
     setTimeout(() => { if(modal) modal.classList.add("hidden"); }, 300);
   }
   showLoadingModal() { document.getElementById("loadingModal")?.classList.remove("hidden"); }
