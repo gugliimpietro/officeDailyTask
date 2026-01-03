@@ -254,8 +254,9 @@ class LetterGenerator {
       
       if (formData.jenisSurat === "Kurikulum Silabus") {
           if (formData.jenisKurikulum) templatePath.push(formData.jenisKurikulum);
+          // For KPK: add perihalKPK to path
+          // For ECP: tahapECP is NOT part of path, only used in template placeholder [tahap_ecp]
           if (formData.jenisKurikulum === "KPK" && formData.perihalKPK) templatePath.push(formData.perihalKPK);
-          else if (formData.jenisKurikulum === "ECP" && formData.tahapECP) templatePath.push(formData.tahapECP);
       }
       
       let varian = "";
@@ -531,7 +532,9 @@ class LetterGenerator {
       perusahaan3: safe(formData.instansiFasilitator3),
       // Others
       pimpinan: safe(formData.pimpinan),
-      instansi: safe(formData.instansi)
+      instansi: safe(formData.instansi),
+      // ECP specific
+      tahap_ecp: safe(formData.tahapECP)
     };
   }
 
