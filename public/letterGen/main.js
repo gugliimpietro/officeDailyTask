@@ -11,9 +11,10 @@ class LetterGenerator {
     this.currentUser = { username: "sadiro" }; 
     
     // ============================================================
-    // ⚠️ PASTE YOUR CLIENT ID HERE
+    // ⚠️ GOOGLE CREDENTIALS
     // ============================================================
     this.GOOGLE_CLIENT_ID = '15549700374-urha9ddap4kb61q6is6n95kq752p2g12.apps.googleusercontent.com'; 
+    this.GOOGLE_API_KEY = 'AIzaSyD9XSsffQgsVc2oRJl0BFHYpyx4SkFwd8s'; // For public read access (no login)
     
     this.tokenClient = null;
     this.accessToken = null;
@@ -125,6 +126,7 @@ class LetterGenerator {
     addListener("modalSendBtn", "click", () => this.handleSendToTask());
     addListener("modalDownloadBtn", "click", () => this.handleDownload());
     addListener("closeSuccessBtn", "click", () => this.closeSuccessModal());
+    addListener("closeWarningBtn", "click", () => this.closeWarningModal());
 
     document.querySelectorAll("input, select, textarea").forEach((input) => {
       input.addEventListener("change", () => this.saveFormState());
@@ -133,13 +135,13 @@ class LetterGenerator {
     });
   }
 
-  // --- GOOGLE DRIVE HELPER: SEARCH ONLY (Restored) ---
+  // --- GOOGLE DRIVE HELPER: SEARCH WITH API KEY (Public Access) ---
   async findFolderId(name, parentId = 'root') {
     const q = `mimeType='application/vnd.google-apps.folder' and name='${name}' and '${parentId}' in parents and trashed=false`;
-    const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}`, {
-      headers: { Authorization: `Bearer ${this.accessToken}` }
-    });
+    const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&key=${this.GOOGLE_API_KEY}`;
+    const res = await fetch(url);
     const data = await res.json();
+    if (data.error) { console.error("Drive API Error:", data.error); return null; }
     return (data.files && data.files.length > 0) ? data.files[0].id : null;
   }
 
@@ -181,11 +183,10 @@ class LetterGenerator {
         currentId = nextId;
     }
 
-    // Find .docx file inside final folder
+    // Find .docx file inside final folder (using API Key for public access)
     const q = `mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document' and '${currentId}' in parents and trashed=false`;
-    const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}`, {
-      headers: { Authorization: `Bearer ${this.accessToken}` }
-    });
+    const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&key=${this.GOOGLE_API_KEY}`;
+    const res = await fetch(url);
     const data = await res.json();
 
     if (!data.files || data.files.length === 0) {
@@ -229,24 +230,16 @@ class LetterGenerator {
   // --- GENERATION HANDLER ---
   async handleGenerate(isRetry = false) {
     if (this.isGenerating && !isRetry) return;
-    if(!this.validateForm()) { this.showNotification("Lengkapi form!", "error"); return; }
+    if(!this.validateForm()) { return; }
     
     this.isGenerating = true;
     this.showLoadingModal();
     
     try {
-      if (!this.accessToken) {
-         this.hideLoadingModal();
-         this.tokenClient.requestAccessToken(); 
-         return; 
-      }
-
-      // 1. Collect Data
+      // 1. Collect Data (NO OAuth needed - templates are public)
       const formData = this.collectFormData();
-      // Use original values for folder searching (exact match), normalize only for safe filenames/folder creation if needed
       
-      // 2. Build Path for Template (Must match Drive folder names EXACTLY)
-      // templates_surat / Sifat / Jenis / Lingkup / [Kurikulum] / [Perihal] / Varian
+      // 2. Build Path for Template
       const templatePath = [];
       templatePath.push(formData.sifatSurat);
       templatePath.push(formData.jenisSurat);
@@ -254,8 +247,6 @@ class LetterGenerator {
       
       if (formData.jenisSurat === "Kurikulum Silabus") {
           if (formData.jenisKurikulum) templatePath.push(formData.jenisKurikulum);
-          // For KPK: add perihalKPK to path
-          // For ECP: tahapECP is NOT part of path, only used in template placeholder [tahap_ecp]
           if (formData.jenisKurikulum === "KPK" && formData.perihalKPK) templatePath.push(formData.perihalKPK);
       }
       
@@ -265,7 +256,7 @@ class LetterGenerator {
       else if (formData.varianKelompok) varian = "kelompok";
       templatePath.push(varian);
 
-      // 3. Find & Download Template
+      // 3. Find & Download Template (Using API Key - no login required)
       const blob = await this.findTemplateBlob(templatePath);
 
       // 4. Fill Template
@@ -280,27 +271,27 @@ class LetterGenerator {
       // 5. Build Output Path
       const username = this.currentUser.username || "user";
       const outputPath = [username];
-      
-      // Add Sifat (e.g. Undangan)
       if (formData.sifatSurat) outputPath.push(normalize(formData.sifatSurat));
-      
-      // Add Kurikulum (e.g. KPK) if applicable
       if (formData.jenisKurikulum) outputPath.push(normalize(formData.jenisKurikulum));
-      else if (formData.jenisSurat) outputPath.push(normalize(formData.jenisSurat)); // Fallback to type
+      else if (formData.jenisSurat) outputPath.push(normalize(formData.jenisSurat));
 
-      // 6. Upload
-      this.generatedFileUrl = await this.uploadToGoogleDrive(renderedBlob, this.generatedFilename, outputPath);
-      
-      this.showSuccessModal(); 
+      // 6. Upload to Drive (OAuth REQUIRED for write operations)
+      if (!this.accessToken) {
+          // If no token, show success modal but tell user they need to login to save to Drive
+          this.generatedFileUrl = null;
+          this.showSuccessModal();
+          this.showNotification("Surat berhasil dibuat! Login untuk menyimpan ke Drive.", "info");
+      } else {
+          this.generatedFileUrl = await this.uploadToGoogleDrive(renderedBlob, this.generatedFilename, outputPath);
+          this.showSuccessModal();
+      }
 
     } catch(e) {
       console.error(e);
       this.showNotification("Gagal: " + (e.message||"Error"), "error");
     } finally {
-      if (this.accessToken) { 
-          this.hideLoadingModal();
-          this.isGenerating = false;
-      }
+      this.hideLoadingModal();
+      this.isGenerating = false;
     }
   }
 
@@ -341,8 +332,10 @@ class LetterGenerator {
 
   // --- HELPERS ---
   async downloadFileBlob(fileId) {
-      const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, { headers: { Authorization: `Bearer ${this.accessToken}` } });
-      if (!res.ok) throw new Error("Gagal download template file.");
+      // Use API Key for public file access (no login required)
+      const url = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&key=${this.GOOGLE_API_KEY}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Gagal download template file. Pastikan file bersifat publik.");
       return await res.blob();
   }
 
@@ -536,7 +529,7 @@ class LetterGenerator {
       pimpinan: safe(formData.pimpinan),
       instansi: safe(formData.instansi),
       // ECP specific
-      tahap_ecp: safe(formData.tahapECP)
+      tahap_ECP: safe(formData.tahapECP)
     };
   }
 
@@ -552,9 +545,86 @@ class LetterGenerator {
   renderDocx(buf, data) { const zip = new window.PizZip(buf); const doc = new window.docxtemplater(zip, { paragraphLoop:true, linebreaks:true, delimiters:{start:"[", end:"]"} }); doc.render(data); return doc.getZip().generate({type:"blob", mimeType:"application/vnd.openxmlformats-officedocument.wordprocessingml.document"}); }
   async ensureDocxLibsLoaded() { const load = (src) => new Promise(r => { if(document.querySelector(`script[src="${src}"]`)) return r(); const s=document.createElement("script"); s.src=src; s.onload=r; document.head.appendChild(s); }); await load("https://cdn.jsdelivr.net/npm/pizzip@3.1.7/dist/pizzip.min.js"); await load("https://cdn.jsdelivr.net/npm/docxtemplater@3.50.0/build/docxtemplater.js"); await load("https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"); }
   validateField(field) { if(!field) return true; const val=field.value.trim(); const err=document.getElementById(`${field.id}Error`); if(err) err.classList.remove("show"); if(this.isFieldVisible(field.id) && this.getRequiredFields().includes(field.id) && !val) { this.showFieldError(field.id, "Wajib diisi"); return false; } return true; }
-  validateForm() { let valid=true; this.getRequiredFields().forEach(id=>{ if(!this.validateField(document.getElementById(id))) valid=false; }); return valid; }
+  
+  validateForm() { 
+    const fieldLabels = {
+      jenisSurat: "Jenis Surat",
+      sifatSurat: "Sifat Surat", 
+      bulanSurat: "Bulan Surat",
+      tanggalPelaksanaan: "Tanggal Pelaksanaan",
+      waktuPelaksanaan: "Waktu Pelaksanaan",
+      jenisKurikulum: "Jenis Kurikulum",
+      topikRapat: "Judul Pelatihan / Topik Rapat",
+      lingkupSurat: "Lingkup Surat (Internal/Eksternal)",
+      varianSurat: "Varian Surat (Individu/Penugasan/Kelompok)"
+    };
+    
+    const missing = [];
+    
+    // Check regular required fields
+    this.getRequiredFields().forEach(id => { 
+      const field = document.getElementById(id);
+      if(!this.validateField(field)) {
+        missing.push(fieldLabels[id] || id);
+      }
+    });
+    
+    // Check Lingkup Surat (at least one checkbox must be checked)
+    const lingkupInternal = document.getElementById("lingkupInternal")?.checked;
+    const lingkupEksternal = document.getElementById("lingkupEksternal")?.checked;
+    if (!lingkupInternal && !lingkupEksternal) {
+      missing.push(fieldLabels.lingkupSurat);
+    }
+    
+    // Check Varian Surat (at least one checkbox must be checked) - if facilitator section is visible
+    const fsVisible = !document.getElementById("facilitatorSection")?.classList.contains("section-hidden");
+    if (fsVisible) {
+      const varianIndividu = document.getElementById("varianIndividu")?.checked;
+      const varianPenugasan = document.getElementById("varianPenugasan")?.checked;
+      const varianKelompok = document.getElementById("varianKelompok")?.checked;
+      if (!varianIndividu && !varianPenugasan && !varianKelompok) {
+        missing.push(fieldLabels.varianSurat);
+      }
+    }
+    
+    if (missing.length > 0) {
+      this.showWarningModal(missing);
+      return false;
+    }
+    return true; 
+  }
   getRequiredFields() { const ss=document.getElementById("sifatSurat")?.value; let req=["jenisSurat","sifatSurat","bulanSurat","tanggalPelaksanaan"]; if(ss==="undangan") req.push("waktuPelaksanaan"); return req.filter(id=>this.isFieldVisible(id)); }
   showFieldError(id, msg) { const e=document.getElementById(`${id}Error`); if(e) { e.textContent=msg; e.classList.add("show"); } }
+  
+  showWarningModal(missingFields) {
+    const modal = document.getElementById("warningModal");
+    const card = document.getElementById("warningModalCard");
+    const list = document.getElementById("warningList");
+    
+    if (!modal || !list) return;
+    
+    // Populate list
+    list.innerHTML = missingFields.map(f => `<li class="flex items-center gap-2"><span class="text-yellow-500">•</span>${f}</li>`).join("");
+    
+    // Show modal
+    modal.classList.remove("hidden");
+    requestAnimationFrame(() => {
+      if(card) {
+        card.classList.remove("opacity-0", "scale-90");
+        card.classList.add("opacity-100", "scale-100");
+      }
+    });
+  }
+  
+  closeWarningModal() {
+    const modal = document.getElementById("warningModal");
+    const card = document.getElementById("warningModalCard");
+    if(card) {
+      card.classList.remove("opacity-100", "scale-100");
+      card.classList.add("opacity-0", "scale-90");
+    }
+    setTimeout(() => { if(modal) modal.classList.add("hidden"); }, 300);
+  }
   
   showSuccessModal() { 
     const modal = document.getElementById("successModal");
