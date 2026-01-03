@@ -456,7 +456,9 @@ class LetterGenerator {
     d.topikRapat = get("topikRapat");
     d.tanggalPelaksanaan = get("tanggalPelaksanaan");
     d.waktuPelaksanaan = get("waktuPelaksanaan");
-    d.tahapECP = get("tahapECP");
+    // tahapECP: Read directly from element if ECP is selected (bypass visibility check)
+    const tahapEl = document.getElementById("tahapECP");
+    d.tahapECP = (d.jenisKurikulum === "ECP" && tahapEl) ? tahapEl.value : "";
     d.lingkupInternal = chk("lingkupInternal");
     d.lingkupEksternal = chk("lingkupEksternal");
     d.jumlahBTS = get("jumlahBTS");
