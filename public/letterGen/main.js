@@ -96,10 +96,23 @@ class LetterGenerator {
   initializeUI() {
     if (document.getElementById("typewriter")) {
       new Typed("#typewriter", {
-        strings: ["Aplikasi Pembuatan Surat Dinas", "isi form yang anda butuhkan"],
-        typeSpeed: 60, backSpeed: 40, backDelay: 2000, loop: true, cursorChar: "|", autoInsertCss: true,
+        strings: ["Aplikasi Pembuatan Surat Dinas", "Profesional & Terintegrasi"],
+        typeSpeed: 50, backSpeed: 30, backDelay: 3000, loop: true, cursorChar: "|", autoInsertCss: true,
       });
     }
+    
+    // Entrance Animation (Staggered)
+    if(window.anime) {
+        anime({
+            targets: '.form-section, .form-control, .btn-primary, .btn-secondary',
+            translateY: [20, 0],
+            opacity: [0, 1],
+            delay: anime.stagger(50),
+            easing: 'easeOutQuad',
+            duration: 800
+        });
+    }
+
     if (typeof Splitting !== "undefined") Splitting();
     this.updateProgressBar();
   }
@@ -153,6 +166,32 @@ class LetterGenerator {
     document.getElementById("loginPassword")?.addEventListener("keypress", (e) => {
         if(e.key === "Enter") this.handleLogin();
     });
+    
+    // Toggle Password Visibility
+    const toggleBtn = document.getElementById("togglePasswordBtn");
+    const passInput = document.getElementById("loginPassword");
+    const eyeOpen = document.getElementById("eyeIconOpen");
+    const eyeClosed = document.getElementById("eyeIconClosed");
+    
+    if(toggleBtn && passInput && eyeOpen && eyeClosed) {
+        toggleBtn.addEventListener("click", () => {
+            if(passInput.type === "password") {
+                passInput.type = "text";
+                eyeOpen.classList.remove("hidden");
+                eyeClosed.classList.add("hidden");
+            } else {
+                passInput.type = "password";
+                eyeOpen.classList.add("hidden");
+                eyeClosed.classList.remove("hidden");
+            }
+        });
+    }
+
+    // Forgot Password
+    addListener("forgotPasswordBtnLink", "click", () => this.showForgotPasswordModal());
+    addListener("backToLoginBtn", "click", () => this.showLoginModalFromForgot());
+    addListener("sendResetBtn", "click", () => this.handleSendResetLink());
+
 
     addListener("modalPreviewBtn", "click", () => this.handlePreview()); 
     addListener("modalSendBtn", "click", () => this.handleSendToTask());
@@ -186,33 +225,137 @@ class LetterGenerator {
       if(m) { m.classList.add("opacity-0"); setTimeout(()=>m.classList.add("hidden"),300); }
   }
 
-  handleLogin() {
-      const u = document.getElementById("loginUsername")?.value;
+  async handleLogin() {
+      const u = document.getElementById("loginUsername")?.value?.trim(); // Trim input
       const p = document.getElementById("loginPassword")?.value;
       const err = document.getElementById("loginError");
+      const btn = document.getElementById("loginBtn");
+      
+      if(err) err.classList.add("hidden");
       
       if(!u || !p) {
-          if(err) { err.textContent = "Mohon isi username dan password."; err.classList.remove("hidden"); }
+          if(err) { 
+              err.querySelector("span").textContent = "Mohon isi username dan password."; 
+              err.classList.remove("hidden"); 
+          }
           return;
       }
       
-      // Check against fetched users
-      if(!this.usersData) {
-           if(err) { err.textContent = "Sedang memuat data user... coba lagi sebentar."; err.classList.remove("hidden"); }
-           return;
-      }
+      // Loading State
+      if(btn) { btn.disabled = true; btn.textContent = "Verifikasi..."; }
       
-      const user = this.usersData.find(x => x.username.toLowerCase() === u.toLowerCase() && x.password === p);
-      
-      if(user) {
-          this.currentUser = user;
-          this.hideLoginModal();
-          this.showNotification(`Selamat datang, ${user.username}!`, "success");
+      try {
+          // Ensure data is loaded (Retry logic)
+          if(!this.usersData || this.usersData.length === 0) {
+               console.log("Users data not ready, fetching...");
+               const success = await this.fetchUsersFromSupabase();
+               if(!success) {
+                   if(err) { 
+                       err.querySelector("span").textContent = "Gagal memuat data sistem. Periksa koneksi internet."; 
+                       err.classList.remove("hidden"); 
+                   }
+                   return;
+               }
+          }
           
-          // Auto-select user as recipient owner if specific ID logic existed, but for now just general login.
-      } else {
-          if(err) { err.textContent = "Username atau password salah."; err.classList.remove("hidden"); }
+          // Strict Check against Loaded Data
+          // Note: Username is case-insensitive, Password is case-sensitive (standard practice)
+          const user = this.usersData.find(x => 
+              x.username && x.username.trim().toLowerCase() === u.toLowerCase() && 
+              x.password === p // Exact match for password
+          );
+          
+          if(user) {
+              this.currentUser = user;
+              this.hideLoginModal();
+              this.showNotification(`Selamat datang, ${user.username}!`, "success");
+          } else {
+              if(err) { 
+                  err.querySelector("span").textContent = "Username atau password tidak sesuai data sistem."; 
+                  err.classList.remove("hidden"); 
+              }
+          }
+      } catch(e) {
+          console.error("Login Error:", e);
+           if(err) { 
+               err.querySelector("span").textContent = "Terjadi kesalahan sistem."; 
+               err.classList.remove("hidden"); 
+           }
+      } finally {
+          if(btn) { btn.disabled = false; btn.textContent = "Masuk"; }
       }
+  }
+
+  // --- FORGOT PASSWORD ---
+  showForgotPasswordModal() {
+      this.hideLoginModal();
+      const m = document.getElementById("forgotPasswordModal");
+      const msg = document.getElementById("forgotMessage");
+      const input = document.getElementById("forgotInput");
+      
+      if(m) { 
+          m.classList.remove("hidden"); 
+          m.classList.remove("opacity-0"); 
+      }
+      if(msg) { msg.classList.add("hidden"); msg.textContent = ""; msg.className = "text-xs hidden p-2 rounded text-center"; }
+      if(input) input.value = "";
+  }
+
+  showLoginModalFromForgot() {
+      const m = document.getElementById("forgotPasswordModal");
+      if(m) { m.classList.add("opacity-0"); setTimeout(()=>m.classList.add("hidden"),300); }
+      this.showLoginModal();
+  }
+
+  handleSendResetLink() {
+      const input = document.getElementById("forgotInput")?.value?.trim();
+      const msg = document.getElementById("forgotMessage");
+      const btn = document.getElementById("sendResetBtn");
+      
+      if(!msg) return;
+
+      // Reset Message State
+      msg.textContent = "";
+      msg.className = "text-xs p-2 rounded text-center hidden";
+
+      if(!input) {
+          msg.textContent = "Mohon masukkan email atau nomor HP.";
+          msg.classList.add("bg-red-100", "text-red-600");
+          msg.classList.remove("hidden");
+          return;
+      }
+
+      // Simulate Loading
+      if(btn) { btn.disabled = true; btn.textContent = "Memproses..."; }
+
+      setTimeout(() => {
+          if(btn) { btn.disabled = false; btn.textContent = "Kirim Link Reset"; }
+
+          // Check Data
+          if(!this.usersData) {
+              msg.textContent = "Data user belum dimuat. Coba lagi.";
+              msg.classList.add("bg-red-100", "text-red-600");
+              msg.classList.remove("hidden");
+              return;
+          }
+
+          const found = this.usersData.find(u => 
+              (u.email && u.email.toLowerCase() === input.toLowerCase()) || 
+              (u.phone_number && u.phone_number.includes(input))
+          );
+
+          if(found) {
+              // Success Simulation
+              msg.textContent = `Link reset password telah dikirim ke ${input}. Silakan cek inbox/SMS Anda.`;
+              msg.classList.add("bg-green-100", "text-green-600");
+              msg.classList.remove("hidden");
+          } else {
+              // Not Found
+              msg.textContent = "Data tidak ditemukan dalam sistem kami.";
+              msg.classList.add("bg-red-100", "text-red-600");
+              msg.classList.remove("hidden");
+          }
+      }, 1000);
   }
 
   // --- GOOGLE DRIVE HELPER: SEARCH WITH API KEY (Public Access) ---

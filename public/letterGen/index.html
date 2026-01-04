@@ -25,28 +25,53 @@
     <script src="https://unpkg.com/splitting@1.0.6/dist/splitting.min.js"></script>
 
     <style>
-      :root { --primary-navy: #1a365d; --secondary-gray: #4a5568; --accent-gold: #d69e2e; --bg-off-white: #fafafa; --success-green: #276749; --error-burgundy: #c53030; --border-light: #e2e8f0; }
-      body { font-family: "Inter", sans-serif; background-color: var(--bg-off-white); background-image: radial-gradient(circle at 1px 1px, rgba(74, 85, 104, 0.05) 1px, transparent 0); background-size: 20px 20px; }
+      :root { --primary-navy: #1a365d; --secondary-gray: #4a5568; --accent-gold: #d69e2e; --bg-off-white: #f8fafc; --success-green: #276749; --error-burgundy: #c53030; --border-light: #e2e8f0; --glass-bg: rgba(255, 255, 255, 0.95); }
+      body { font-family: "Inter", sans-serif; background-color: var(--bg-off-white); background-image: radial-gradient(#cbd5e0 1px, transparent 1px); background-size: 30px 30px; }
       .font-display { font-family: "Playfair Display", serif; }
       .font-mono { font-family: "JetBrains Mono", monospace; }
-      .hero-bg { background: linear-gradient(135deg, var(--primary-navy) 0%, var(--secondary-gray) 100%); position: relative; overflow: hidden; }
-      .form-card { background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08); border: 1px solid var(--border-light); transition: all 0.3s ease; }
-      .form-card:hover { box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12); }
-      .form-section { border-left: 4px solid var(--accent-gold); padding-left: 1.5rem; margin-bottom: 2rem; }
-      .form-control { border: 2px solid var(--border-light); border-radius: 8px; padding: 0.75rem 1rem; font-size: 1rem; transition: all 0.3s ease; background-color: white; }
-      .form-control:focus { outline: none; border-color: var(--accent-gold); box-shadow: 0 0 0 3px rgba(214, 158, 46, 0.1); }
-      .btn-primary { background: linear-gradient(135deg, var(--accent-gold) 0%, #b7791f 100%); color: white; padding: 0.875rem 2rem; border-radius: 8px; font-weight: 600; border: none; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 4px 15px rgba(214, 158, 46, 0.3); }
-      .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(214, 158, 46, 0.4); }
-      .btn-secondary { background: white; color: var(--secondary-gray); border: 2px solid var(--border-light); padding: 0.875rem 2rem; border-radius: 8px; font-weight: 500; cursor: pointer; transition: all 0.3s ease; }
-      .btn-secondary:hover { border-color: var(--accent-gold); color: var(--accent-gold); }
-      .checkbox-custom { appearance: none; width: 1.25rem; height: 1.25rem; border: 2px solid var(--border-light); border-radius: 4px; position: relative; cursor: pointer; transition: all 0.3s ease; }
-      .checkbox-custom:checked { background-color: var(--accent-gold); border-color: var(--accent-gold); }
-      .checkbox-custom:checked::after { content: "✓"; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-size: 0.875rem; font-weight: bold; }
-      .error-message { color: var(--error-burgundy); font-size: 0.875rem; margin-top: 0.25rem; opacity: 0; transform: translateY(-10px); transition: all 0.3s ease; }
-      .error-message.show { opacity: 1; transform: translateY(0); }
-      .section-hidden { max-height: 0; overflow: hidden; opacity: 0; transition: all 0.5s ease; }
-      .section-visible { max-height: 1000px; opacity: 1; }
-      .nav-sticky { position: sticky; top: 0; z-index: 100; backdrop-filter: blur(10px); background-color: rgba(255, 255, 255, 0.95); border-bottom: 1px solid var(--border-light); }
+      
+      /* Hero & Headers */
+      .hero-bg { background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); position: relative; overflow: hidden; }
+      .hero-pattern { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%239C92AC' fill-opacity='0.05'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E"); }
+      
+      /* Card Glass Effect */
+      .form-card { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(12px); border-radius: 16px; box-shadow: 0 10px 40px -10px rgba(0,0,0,0.1); border: 1px solid rgba(255,255,255,0.5); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s; }
+      .form-card:hover { transform: translateY(-2px); box-shadow: 0 20px 50px -12px rgba(0,0,0,0.15); }
+      
+      /* Section Styling */
+      .form-section { border-left: 3px solid var(--accent-gold); padding-left: 1.5rem; margin-bottom: 2.5rem; position: relative; }
+      .form-section::before { content: ''; position: absolute; left: 0; top: 0; width: 3px; height: 100%; background: var(--accent-gold); box-shadow: 0 0 10px var(--accent-gold); opacity: 0.5; }
+      
+      /* Inputs */
+      .form-control { border: 1px solid #cbd5e1; border-radius: 10px; padding: 0.75rem 1rem; font-size: 0.95rem; transition: all 0.2s; background-color: #f8fafc; }
+      .form-control:focus { outline: none; border-color: var(--accent-gold); background-color: white; box-shadow: 0 0 0 4px rgba(214, 158, 46, 0.1); transform: translateY(-1px); }
+      
+      /* Buttons */
+      .btn-primary { background: linear-gradient(135deg, #d69e2e 0%, #b7791f 100%); color: white; padding: 1rem 2.5rem; border-radius: 10px; font-weight: 600; border: none; cursor: pointer; transition: all 0.3s; box-shadow: 0 4px 6px -1px rgba(183, 121, 31, 0.3); letter-spacing: 0.5px; }
+      .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(183, 121, 31, 0.4); filter: brightness(1.1); }
+      .btn-primary:active { transform: translateY(0); }
+      
+      .btn-secondary { background: white; color: var(--secondary-gray); border: 1px solid #cbd5e1; padding: 1rem 2rem; border-radius: 10px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+      .btn-secondary:hover { border-color: var(--accent-gold); color: var(--accent-gold); background-color: #fffaf0; }
+      
+      /* Checkbox */
+      .checkbox-custom { appearance: none; width: 1.35rem; height: 1.35rem; border: 2px solid #cbd5e1; border-radius: 6px; cursor: pointer; transition: all 0.2s; position: relative; vertical-align: middle; }
+      .checkbox-custom:checked { background-color: var(--accent-gold); border-color: var(--accent-gold); transform: scale(1.1); }
+      .checkbox-custom:checked::after { content: "✓"; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-size: 0.9rem; font-weight: bold; }
+      
+      /* Utilities */
+      .error-message { color: var(--error-burgundy); font-size: 0.8rem; margin-top: 0.4rem; font-weight: 500; display: flex; align-items: center; gap: 4px; animation: slideDown 0.3s ease-out; }
+      .section-hidden { max-height: 0; opacity: 0; overflow: hidden; transform: scale(0.98); transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
+      .section-visible { max-height: 2000px; opacity: 1; transform: scale(1); }
+      .nav-sticky { position: sticky; top: 0; z-index: 50; backdrop-filter: blur(16px); background-color: rgba(255, 255, 255, 0.8); border-bottom: 1px solid rgba(226, 232, 240, 0.6); }
+      
+      @keyframes slideDown { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+      
+      /* Modal Transitions */
+      .modal-enter { opacity: 0; transform: scale(0.95); }
+      .modal-enter-active { opacity: 1; transform: scale(1); transition: opacity 300ms, transform 300ms cubic-bezier(0.4, 0, 0.2, 1); }
+      .modal-exit { opacity: 1; transform: scale(1); }
+      .modal-exit-active { opacity: 0; transform: scale(0.95); transition: opacity 200ms, transform 200ms ease-in; }
     </style>
   </head>
   <body>
@@ -380,15 +405,52 @@
                 </div>
                 <div>
                    <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase">Password</label>
-                   <input type="password" id="loginPassword" class="w-full border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Masukkan password" />
+                   <div class="relative">
+                     <input type="password" id="loginPassword" class="w-full border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Masukkan password" />
+                     <button type="button" id="togglePasswordBtn" class="absolute inset-y-0 right-0 px-3 flex items-center text-gray-500 hover:text-gray-700">
+                        <svg id="eyeIconOpen" class="w-5 h-5 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                        <svg id="eyeIconClosed" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/></svg>
+                     </button>
+                   </div>
                 </div>
-                <div id="loginError" class="text-red-500 text-xs hidden">Username atau password salah.</div>
+                <div id="loginError" class="text-red-500 text-xs hidden p-2 bg-red-50 rounded border border-red-100 flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    <span>Username atau password salah.</span>
+                </div>
                 
                 <button id="loginBtn" class="w-full bg-blue-600 text-white font-bold py-3 rounded-xl hover:bg-blue-700 transition transform active:scale-95">
                     Masuk
                 </button>
             </div>
             <p class="mt-4 text-xs text-gray-400">Default password: 1234</p>
+            <div class="mt-2 text-right">
+                <button id="forgotPasswordBtnLink" class="text-xs text-blue-500 hover:text-blue-700 hover:underline">Lupa Password?</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Forgot Password Modal -->
+    <div id="forgotPasswordModal" class="fixed inset-0 z-[101] flex items-center justify-center bg-gray-900 bg-opacity-90 backdrop-blur-md transition-opacity duration-300 hidden">
+        <div class="bg-white rounded-2xl p-8 max-w-sm w-full text-center shadow-2xl">
+            <h2 class="font-display text-xl font-bold text-gray-800 mb-2">Lupa Password?</h2>
+            <p class="text-gray-500 mb-6 text-sm">Masukkan email atau nomor telepon yang terdaftar.</p>
+            
+            <div class="space-y-4 text-left">
+                <div>
+                   <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase">Email / No. HP</label>
+                   <input type="text" id="forgotInput" class="w-full border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Contoh: user@email.com" />
+                </div>
+                
+                <div id="forgotMessage" class="text-xs hidden p-2 rounded text-center"></div>
+                
+                <button id="sendResetBtn" class="w-full bg-blue-600 text-white font-bold py-3 rounded-xl hover:bg-blue-700 transition transform active:scale-95">
+                    Kirim Link Reset
+                </button>
+                
+                <button id="backToLoginBtn" class="w-full bg-white border border-gray-200 text-gray-600 font-bold py-3 rounded-xl hover:bg-gray-50 transition">
+                    Kembali ke Login
+                </button>
+            </div>
         </div>
     </div>
 
