@@ -63,6 +63,7 @@ class LetterGenerator {
     }
     
     this.populateFacilitators();
+    await this.fetchBTSMaterials();
     this.populateBTSPrograms();
     this.loadFormState();
     
@@ -138,6 +139,12 @@ class LetterGenerator {
       input.addEventListener("change", () => this.saveFormState());
       input.addEventListener("input", () => this.saveFormState());
       input.addEventListener("blur", (e) => this.validateField(e.target));
+    });
+    
+    // BTS Listeners
+    [1,2,3].forEach(i => {
+        const el = document.getElementById(`btsPelatihan${i}`);
+        if(el) el.addEventListener("change", () => this.handleBTSPelatihanChange(i));
     });
   }
 
@@ -432,7 +439,19 @@ class LetterGenerator {
     const curriculumSec = document.getElementById("curriculumSection");
     const btsSec = document.getElementById("btsSection");
     if (js === "Kurikulum Silabus") { this.showSection(curriculumSec); this.hideSection(btsSec); }
-    else if (js === "Bahan Tayang Standar") { this.hideSection(curriculumSec); this.showSection(btsSec); }
+    else if (js === "Bahan Tayang Standar") { 
+        this.hideSection(curriculumSec); 
+        this.showSection(btsSec);
+        
+        // Handle BTS Sections Visibility
+        const jumlahBTS = parseInt(document.getElementById("jumlahBTS")?.value) || 0;
+        for(let i=1; i<=3; i++) {
+            const sec = document.getElementById(`bts${i}Section`);
+            if(sec) {
+                if(i <= jumlahBTS) this.showSection(sec); else this.hideSection(sec);
+            }
+        }
+    }
     else { this.hideSection(curriculumSec); this.hideSection(btsSec); }
 
     const kpkSec = document.getElementById("perihalKPKSection");
@@ -493,7 +512,11 @@ class LetterGenerator {
     d.lingkupInternal = chk("lingkupInternal");
     d.lingkupEksternal = chk("lingkupEksternal");
     d.jumlahBTS = get("jumlahBTS");
-    d.btsPelatihan1 = get("btsPelatihan1"); d.btsMateri1 = get("btsMateri1");
+    [1,2,3].forEach(n => {
+        d[`btsPelatihan${n}`] = get(`btsPelatihan${n}`);
+        d[`btsMateri${n}`] = get(`btsMateri${n}`);
+    });
+    
     d.varianIndividu = chk("varianIndividu");
     d.varianPenugasan = chk("varianPenugasan");
     d.varianKelompok = chk("varianKelompok");
@@ -552,6 +575,13 @@ class LetterGenerator {
       lampiran: safe(formData.lampiran),
       mitra_kerjasama: safe(formData.mitraKerjasama),
       topik_rapat: safe(formData.topikRapat),
+      // BTS
+      bts_pelatihan_1: safe(formData.btsPelatihan1),
+      bts_materi_1: safe(formData.btsMateri1),
+      bts_pelatihan_2: safe(formData.btsPelatihan2),
+      bts_materi_2: safe(formData.btsMateri2),
+      bts_pelatihan_3: safe(formData.btsPelatihan3),
+      bts_materi_3: safe(formData.btsMateri3),
       // Facilitator names
       fasilitator1: safe(formData.namaFasilitator1),
       fasilitator2: safe(formData.namaFasilitator2),
@@ -578,7 +608,59 @@ class LetterGenerator {
   hideSection(el) { if(el) { el.classList.remove("section-visible"); el.classList.add("section-hidden"); } }
   updateFacilitatorFields() { this.refreshUI(); } 
   handleFasilitatorChange(e, i) { const val=e.target.value; const div=document.getElementById(`instansiFasilitator${i}`); if(val&&this.facilitators){ const f=this.facilitators.find(x=>x.nama===val); if(div) div.textContent=f?`Instansi: ${f.perusahaan}`:""; } }
-  populateBTSPrograms() { [1,2,3].forEach(i=>{ const el=document.getElementById(`btsPelatihan${i}`); if(!el) return; if(typeof btsTrainingPrograms!=="undefined") Object.keys(btsTrainingPrograms).forEach(k=>{ const o=document.createElement("option"); o.value=k; o.textContent=k; el.appendChild(o); }); }); }
+  async fetchBTSMaterials() {
+    try {
+        const { data, error } = await window.supabase.from('bts_materials').select('*');
+        if (error) throw error;
+        
+        // Group by Category
+        this.btsData = {};
+        data.forEach(item => {
+            if (!this.btsData[item.category]) this.btsData[item.category] = [];
+            this.btsData[item.category].push(item.topic);
+        });
+        
+        this.populateBTSPrograms();
+    } catch (e) {
+        console.error("Gagal load BTS Materials:", e);
+    }
+  }
+
+  populateBTSPrograms() { 
+      [1,2,3].forEach(i => { 
+          const el = document.getElementById(`btsPelatihan${i}`); 
+          if(!el) return;
+          el.innerHTML = '<option value="">-- Pilih Kategori --</option>'; // Reset
+          
+          if(this.btsData) {
+              Object.keys(this.btsData).forEach(k => { 
+                  const o = document.createElement("option"); 
+                  o.value = k; 
+                  o.textContent = k; 
+                  el.appendChild(o); 
+              }); 
+          }
+      }); 
+  }
+
+  handleBTSPelatihanChange(index) {
+      const catEl = document.getElementById(`btsPelatihan${index}`);
+      const matEl = document.getElementById(`btsMateri${index}`);
+      if(!catEl || !matEl) return;
+      
+      const category = catEl.value;
+      matEl.innerHTML = '<option value="">-- Pilih Materi --</option>'; // Reset
+      
+      if(category && this.btsData && this.btsData[category]) {
+          this.btsData[category].forEach(topic => {
+              const o = document.createElement("option");
+              o.value = topic;
+              o.textContent = topic;
+              matEl.appendChild(o);
+          });
+      }
+  }
+
   fetchTemplateMetadata(folderKey) { return null; } 
   renderDocx(buf, data) { const zip = new window.PizZip(buf); const doc = new window.docxtemplater(zip, { paragraphLoop:true, linebreaks:true, delimiters:{start:"[", end:"]"} }); doc.render(data); return doc.getZip().generate({type:"blob", mimeType:"application/vnd.openxmlformats-officedocument.wordprocessingml.document"}); }
   async ensureDocxLibsLoaded() { 
