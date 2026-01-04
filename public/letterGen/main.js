@@ -1,1192 +1,376 @@
-// src/public/letterGen/main.js
+import { AuthService } from './modules/AuthService.js';
+import { DriveService } from './modules/DriveService.js';
+import { GeneratorService } from './modules/GeneratorService.js';
+import { UIService } from './modules/UIService.js';
+import * as Data from './modules/Data.js';
 
-class LetterGenerator {
-  constructor() {
-    this.formData = {};
-    this.isGenerating = false;
-    this.generatedBlob = null;
-    this.generatedFilename = null;
-    this.generatedFileUrl = null; 
-    this.templateUrl = null;      
-    this.currentUser = null; // Require login 
-    
-    // ============================================================
-    // ⚠️ GOOGLE CREDENTIALS
-    // ============================================================
-    this.GOOGLE_CLIENT_ID = '15549700374-urha9ddap4kb61q6is6n95kq752p2g12.apps.googleusercontent.com'; 
-    this.GOOGLE_API_KEY = 'AIzaSyD9XSsffQgsVc2oRJl0BFHYpyx4SkFwd8s'; // For public read access (no login)
-    // ⚠️ PASTE FOLDER ID OF 'templates_surat' HERE
-    this.TEMPLATE_ROOT_ID = '1Ah7Hke5-O2oWa--8LlxhH3ZI7e29qGho'; 
-    // ⚠️ PASTE GAS WEB APP URL HERE
-    this.GAS_UPLOAD_URL = 'https://script.google.com/macros/s/AKfycbyqMPDH3Ci3uQeS2iNWjyAfScwLKihHUOFUSOQ2Wvklyz4O3NrPfv8LU49w-B_kkFip/exec';
-    
-    this.tokenClient = null;
-    this.accessToken = null;
+class LetterGeneratorApp {
+    constructor() {
+        // Configuration
+        this.config = {
+            googleClientId: '15549700374-urha9ddap4kb61q6is6n95kq752p2g12.apps.googleusercontent.com',
+            googleApiKey: 'AIzaSyD9XSsffQgsVc2oRJl0BFHYpyx4SkFwd8s',
+            templateRootId: '1Ah7Hke5-O2oWa--8LlxhH3ZI7e29qGho',
+            gasUploadUrl: 'https://script.google.com/macros/s/AKfycbyqMPDH3Ci3uQeS2iNWjyAfScwLKihHUOFUSOQ2Wvklyz4O3NrPfv8LU49w-B_kkFip/exec',
+            // Supabase config is global window.SUPABASE_URL provided by env/script
+            supabaseUrl: window.SUPABASE_URL,
+            supabaseKey: window.SUPABASE_ANON_KEY
+        };
 
-    this.defaultFacilitators = [
-        { nama: "Fasilitator 1", perusahaan: "Instansi A" },
-        { nama: "Fasilitator 2", perusahaan: "Instansi B" },
-        { nama: "Fasilitator 3", perusahaan: "Instansi C" }
-    ];
-    this.facilitators = [];
-    this.recipientOptions = [
-        { id: "ops-team", name: "Tim Operasional", channel: "Komentar" },
-        { id: "owner", name: "Pemilik Tugas", channel: "Komentar" },
-        { id: "custom", name: "Pengguna Lain", channel: "Komentar" }
-    ];
-    this.selectedRecipientId = "";
-
-    this.init().catch((err) => console.error("Init error:", err));
-  }
-
-  safeAnime(config) {
-    try {
-      if (window.anime) return window.anime(config);
-      const targets = config?.targets;
-      const applyWidth = config?.width;
-      if (targets && applyWidth != null) {
-        const els = typeof targets === "string" ? Array.from(document.querySelectorAll(targets)) : 
-                    targets instanceof Element ? [targets] : 
-                    Array.isArray(targets) ? targets : [];
-        els.forEach((el) => { try { el.style.width = applyWidth; } catch (_) {} });
-      }
-    } catch (e) { console.warn("Animation error:", e); }
-    return null;
-  }
-
-  async init() {
-    this.populateTimeSlots();
-    this.showLoginModal(); // Show immediately
-    this.initializeUI();
-    // this.populateRecipients(); // Moved after async fetch
-    this.setupEventListeners();
-    this.initGoogleAuth(); 
-
-    // Fetch Facilitators
-    this.populateFacilitators({ loading: true });
-    
-    // Parallel Fetch: Facilitators & Users
-    const [facLoaded, usersLoaded] = await Promise.all([
-        this.refreshFacilitatorsFromSupabase(),
-        this.fetchUsersFromSupabase()
-    ]);
-
-    if (!facLoaded || this.facilitators.length === 0) {
-        console.warn("Using default facilitators");
-        this.facilitators = this.defaultFacilitators;
-    }
-    
-    this.populateFacilitators();
-    this.populateRecipients(); // Now populated with users data
-
-    await this.fetchBTSMaterials();
-    this.populateBTSPrograms();
-    this.loadFormState();
-    
-    try { this.initializeCharts(); } catch(e) {}
-    try { this.startParticleAnimation(); } catch(e) {}
-    
-    this.applyVisibilityRules();
-  }
-
-  // ... (initializeUI etc skipped in replacement match if I target init block strictly, wait I need to target init lines)
-  // I will target init specifically first.
-
-
-  initializeUI() {
-    if (document.getElementById("typewriter")) {
-      new Typed("#typewriter", {
-        strings: ["Aplikasi Pembuatan Surat Dinas", "Profesional & Terintegrasi"],
-        typeSpeed: 50, backSpeed: 30, backDelay: 3000, loop: true, cursorChar: "|", autoInsertCss: true,
-      });
-    }
-    
-    // Entrance Animation (Staggered)
-    if(window.anime) {
-        anime({
-            targets: '.form-section, .form-control, .btn-primary, .btn-secondary',
-            translateY: [20, 0],
-            opacity: [0, 1],
-            delay: anime.stagger(50),
-            easing: 'easeOutQuad',
-            duration: 800
+        // Services
+        this.ui = new UIService();
+        this.auth = new AuthService({
+            supabaseUrl: this.config.supabaseUrl,
+            supabaseKey: this.config.supabaseKey,
+            googleClientId: this.config.googleClientId
         });
+        this.drive = new DriveService(this.config.googleApiKey, this.config.gasUploadUrl);
+        this.generator = new GeneratorService(this.drive, this.config.templateRootId);
+
+        // State
+        this.generatedResults = [];
+        this.facilitators = [];
+        this.usersData = [];
     }
 
-    if (typeof Splitting !== "undefined") Splitting();
-    this.updateProgressBar();
-  }
-
-  initGoogleAuth() {
-    if (window.google) {
-      try {
-          this.tokenClient = google.accounts.oauth2.initTokenClient({
-            client_id: this.GOOGLE_CLIENT_ID,
-            scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.readonly',
-            callback: (tokenResponse) => {
-              if (tokenResponse && tokenResponse.access_token) {
-                this.accessToken = tokenResponse.access_token;
+    async init() {
+        try {
+            this.ui.initializeAnimations();
+            this.ui.populateSelect("waktuPelaksanaan", Data.timeSlots, "-- Pilih Waktu --");
+            this.populateBTSPrograms();
+            
+            this.setupEventListeners();
+            
+            // Show Login immediately
+            this.ui.showLoginModal();
+            
+            // Initialize Auth
+            this.auth.initGoogleAuth("https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.readonly", (token) => {
                 console.log("Google Auth Success");
-                if (this.isGenerating) this.handleGenerate(true); 
-                if (this.pendingPreview) { this.handlePreview(); this.pendingPreview = false; }
-              }
-            },
-          });
-      } catch(e) { console.error("GSI Error:", e); }
-    } else {
-      console.error("GSI script not loaded");
+            });
+
+            // Load Data
+            await this.loadInitialData();
+            
+            // Initial UI Refresh
+            this.ui.updateProgressBar();
+            this.refreshUI();
+            
+        } catch (e) {
+            console.error("Initialization Error:", e);
+            this.ui.showNotification("Gagal inisialisasi aplikasi.", "error");
+        }
     }
-  }
 
-  setupEventListeners() {
-    const addListener = (id, event, handler) => {
-      const el = document.getElementById(id);
-      if (el) el.addEventListener(event, handler);
-    };
+    async loadInitialData() {
+        // Parallel fetch
+        const [facilitators, users] = await Promise.all([
+            this.auth.fetchFacilitators(),
+            this.auth.fetchUsers()
+        ]);
 
-    addListener("jenisSurat", "change", () => this.refreshUI());
-    addListener("sifatSurat", "change", () => this.refreshUI());
-    addListener("jenisKurikulum", "change", () => this.refreshUI());
-    addListener("lingkupInternal", "change", () => this.refreshUI());
-    addListener("lingkupEksternal", "change", () => this.refreshUI());
-    addListener("varianIndividu", "change", () => this.refreshUI());
-    addListener("varianPenugasan", "change", () => this.refreshUI());
-    addListener("varianKelompok", "change", () => this.refreshUI());
-    addListener("jumlahBTS", "change", () => this.refreshUI());
-    [1, 2, 3].forEach(i => addListener(`btsPelatihan${i}`, "change", () => this.refreshUI()));
-    addListener("jumlahFasilitator", "change", () => { this.updateFacilitatorFields(); this.refreshUI(); });
-    [1, 2, 3].forEach(i => addListener(`namaFasilitator${i}`, "change", (e) => { this.handleFasilitatorChange(e, i); this.refreshUI(); }));
+        this.facilitators = facilitators.length > 0 ? facilitators : Data.facilitators; // Fallback to mock
+        this.usersData = users;
 
-    addListener("generateBtn", "click", () => this.handleGenerate(false));
-    addListener("resetBtn", "click", () => this.handleReset());
-    addListener("formPreviewBtn", "click", () => alert("Klik 'Generate Surat' terlebih dahulu."));
-    
-    // Login
-    addListener("loginBtn", "click", () => this.handleLogin());
-    document.getElementById("loginPassword")?.addEventListener("keypress", (e) => {
-        if(e.key === "Enter") this.handleLogin();
-    });
-    
-    // Toggle Password Visibility
-    const toggleBtn = document.getElementById("togglePasswordBtn");
-    const passInput = document.getElementById("loginPassword");
-    const eyeOpen = document.getElementById("eyeIconOpen");
-    const eyeClosed = document.getElementById("eyeIconClosed");
-    
-    if(toggleBtn && passInput && eyeOpen && eyeClosed) {
-        toggleBtn.addEventListener("click", () => {
-            if(passInput.type === "password") {
-                passInput.type = "text";
-                eyeOpen.classList.remove("hidden");
-                eyeClosed.classList.add("hidden");
-            } else {
-                passInput.type = "password";
-                eyeOpen.classList.add("hidden");
-                eyeClosed.classList.remove("hidden");
-            }
+        // Populate Facilitator Dropdowns
+        this.populateFacilitators();
+        
+        // Populate Recipient Dropdown
+        this.populateRecipients();
+    }
+
+    setupEventListeners() {
+        const add = (id, evt, fn) => {
+            const el = document.getElementById(id);
+            if(el) el.addEventListener(evt, fn);
+        };
+
+        // Form Visibility Triggers
+        const triggers = [
+            "jenisSurat", "sifatSurat", "jenisKurikulum", 
+            "lingkupInternal", "lingkupEksternal",
+            "varianIndividu", "varianPenugasan", "varianKelompok",
+            "jumlahBTS", "jumlahFasilitator"
+        ];
+        triggers.forEach(id => add(id, "change", () => this.refreshUI()));
+        
+        // BTS Dynamic Triggers
+        [1,2,3].forEach(i => add(`btsPelatihan${i}`, "change", () => this.refreshUI()));
+        [1,2,3].forEach(i => add(`namaFasilitator${i}`, "change", () => this.refreshUI())); // Should handle autofill company
+
+        // Actions
+        add("generateBtn", "click", () => this.handleGenerate());
+        add("resetBtn", "click", () => window.location.reload()); // Simple reset
+        
+        // Login
+        add("loginBtn", "click", () => this.handleLogin());
+        document.getElementById("loginPassword")?.addEventListener("keypress", (e) => {
+            if(e.key === "Enter") this.handleLogin();
+        });
+        
+        // Forgot Password
+        add("forgotPasswordBtnLink", "click", () => this.ui.showForgotPasswordModal());
+        add("backToLoginBtn", "click", () => {
+            this.ui.hideForgotPasswordModal();
+            this.ui.showLoginModal();
+        });
+        add("sendResetBtn", "click", () => this.handleSendResetLink());
+        
+        // Password Toggle
+        const toggleBtn = document.getElementById("togglePasswordBtn");
+        if(toggleBtn) {
+            toggleBtn.addEventListener("click", () => {
+                const input = document.getElementById("loginPassword");
+                const eyeOpen = document.getElementById("eyeIconOpen");
+                const eyeClosed = document.getElementById("eyeIconClosed");
+                if(input.type === "password") {
+                    input.type = "text";
+                    eyeOpen.classList.remove("hidden");
+                    eyeClosed.classList.add("hidden");
+                } else {
+                    input.type = "password";
+                    eyeOpen.classList.add("hidden");
+                    eyeClosed.classList.remove("hidden");
+                }
+            });
+        }
+
+        // Modal Actions
+        add("modalPreviewBtn", "click", () => this.handlePreview());
+        add("modalSendBtn", "click", () => this.handleSendToTask());
+        add("modalDownloadBtn", "click", () => this.handleDownload());
+        add("closeSuccessBtn", "click", () => this.ui.hideSuccessModal());
+        add("closeWarningBtn", "click", () => this.ui.hideWarningModal());
+        
+        // Input Saving
+        document.querySelectorAll("input, select, textarea").forEach(el => {
+            el.addEventListener("change", () => this.ui.updateProgressBar());
+            el.addEventListener("input", () => this.ui.updateProgressBar());
         });
     }
 
-    // Forgot Password
-    addListener("forgotPasswordBtnLink", "click", () => this.showForgotPasswordModal());
-    addListener("backToLoginBtn", "click", () => this.showLoginModalFromForgot());
-    addListener("sendResetBtn", "click", () => this.handleSendResetLink());
+    // --- LOGIC ---
 
+    async handleLogin() {
+        const u = document.getElementById("loginUsername")?.value?.trim();
+        const p = document.getElementById("loginPassword")?.value;
+        const err = document.getElementById("loginError");
+        const btn = document.getElementById("loginBtn");
 
-    addListener("modalPreviewBtn", "click", () => this.handlePreview()); 
-    addListener("modalSendBtn", "click", () => this.handleSendToTask());
-    addListener("modalDownloadBtn", "click", () => this.handleDownload());
-    addListener("closeSuccessBtn", "click", () => this.closeSuccessModal());
-    addListener("closeWarningBtn", "click", () => this.closeWarningModal());
-    addListener("closePreviewBtn", "click", () => this.closePreviewModal());
-    addListener("recipientSelect", "change", (e) => this.handleRecipientChange(e));
-
-    document.querySelectorAll("input, select, textarea").forEach((input) => {
-      input.addEventListener("change", () => this.saveFormState());
-      input.addEventListener("input", () => this.saveFormState());
-      input.addEventListener("blur", (e) => this.validateField(e.target));
-    });
-    
-    // BTS Listeners
-    [1,2,3].forEach(i => {
-        const el = document.getElementById(`btsPelatihan${i}`);
-        if(el) el.addEventListener("change", () => this.handleBTSPelatihanChange(i));
-    });
-  }
-
-  // --- LOGIN ---
-  showLoginModal() {
-      const m = document.getElementById("loginModal");
-      if(m) { m.classList.remove("hidden"); m.classList.remove("opacity-0"); }
-  }
-  
-  hideLoginModal() {
-      const m = document.getElementById("loginModal");
-      if(m) { m.classList.add("opacity-0"); setTimeout(()=>m.classList.add("hidden"),300); }
-  }
-
-  async handleLogin() {
-      const u = document.getElementById("loginUsername")?.value?.trim(); // Trim input
-      const p = document.getElementById("loginPassword")?.value;
-      const err = document.getElementById("loginError");
-      const btn = document.getElementById("loginBtn");
-      
-      if(err) err.classList.add("hidden");
-      
-      if(!u || !p) {
-          if(err) { 
-              err.querySelector("span").textContent = "Mohon isi username dan password."; 
-              err.classList.remove("hidden"); 
-          }
-          return;
-      }
-      
-      // Loading State
-      if(btn) { btn.disabled = true; btn.textContent = "Verifikasi..."; }
-      
-      try {
-          // Ensure data is loaded (Retry logic)
-          if(!this.usersData || this.usersData.length === 0) {
-               console.log("Users data not ready, fetching...");
-               const success = await this.fetchUsersFromSupabase();
-               if(!success) {
-                   if(err) { 
-                       err.querySelector("span").textContent = "Gagal memuat data sistem. Periksa koneksi internet."; 
-                       err.classList.remove("hidden"); 
-                   }
-                   return;
-               }
-          }
-          
-          // Strict Check against Loaded Data
-          // Note: Username is case-insensitive, Password is case-sensitive (standard practice)
-          const user = this.usersData.find(x => 
-              x.username && x.username.trim().toLowerCase() === u.toLowerCase() && 
-              x.password === p // Exact match for password
-          );
-          
-          if(user) {
-              this.currentUser = user;
-              this.hideLoginModal();
-              this.showNotification(`Selamat datang, ${user.username}!`, "success");
-          } else {
-              if(err) { 
-                  err.querySelector("span").textContent = "Username atau password tidak sesuai data sistem."; 
-                  err.classList.remove("hidden"); 
-              }
-          }
-      } catch(e) {
-          console.error("Login Error:", e);
-           if(err) { 
-               err.querySelector("span").textContent = "Terjadi kesalahan sistem."; 
-               err.classList.remove("hidden"); 
-           }
-      } finally {
-          if(btn) { btn.disabled = false; btn.textContent = "Masuk"; }
-      }
-  }
-
-  // --- FORGOT PASSWORD ---
-  showForgotPasswordModal() {
-      this.hideLoginModal();
-      const m = document.getElementById("forgotPasswordModal");
-      const msg = document.getElementById("forgotMessage");
-      const input = document.getElementById("forgotInput");
-      
-      if(m) { 
-          m.classList.remove("hidden"); 
-          m.classList.remove("opacity-0"); 
-      }
-      if(msg) { msg.classList.add("hidden"); msg.textContent = ""; msg.className = "text-xs hidden p-2 rounded text-center"; }
-      if(input) input.value = "";
-  }
-
-  showLoginModalFromForgot() {
-      const m = document.getElementById("forgotPasswordModal");
-      if(m) { m.classList.add("opacity-0"); setTimeout(()=>m.classList.add("hidden"),300); }
-      this.showLoginModal();
-  }
-
-  handleSendResetLink() {
-      const input = document.getElementById("forgotInput")?.value?.trim();
-      const msg = document.getElementById("forgotMessage");
-      const btn = document.getElementById("sendResetBtn");
-      
-      if(!msg) return;
-
-      // Reset Message State
-      msg.textContent = "";
-      msg.className = "text-xs p-2 rounded text-center hidden";
-
-      if(!input) {
-          msg.textContent = "Mohon masukkan email atau nomor HP.";
-          msg.classList.add("bg-red-100", "text-red-600");
-          msg.classList.remove("hidden");
-          return;
-      }
-
-      // Simulate Loading
-      if(btn) { btn.disabled = true; btn.textContent = "Memproses..."; }
-
-      setTimeout(() => {
-          if(btn) { btn.disabled = false; btn.textContent = "Kirim Link Reset"; }
-
-          // Check Data
-          if(!this.usersData) {
-              msg.textContent = "Data user belum dimuat. Coba lagi.";
-              msg.classList.add("bg-red-100", "text-red-600");
-              msg.classList.remove("hidden");
-              return;
-          }
-
-          const found = this.usersData.find(u => 
-              (u.email && u.email.toLowerCase() === input.toLowerCase()) || 
-              (u.phone_number && u.phone_number.includes(input))
-          );
-
-          if(found) {
-              // Success Simulation
-              msg.textContent = `Link reset password telah dikirim ke ${input}. Silakan cek inbox/SMS Anda.`;
-              msg.classList.add("bg-green-100", "text-green-600");
-              msg.classList.remove("hidden");
-          } else {
-              // Not Found
-              msg.textContent = "Data tidak ditemukan dalam sistem kami.";
-              msg.classList.add("bg-red-100", "text-red-600");
-              msg.classList.remove("hidden");
-          }
-      }, 1000);
-  }
-
-  // --- GOOGLE DRIVE HELPER: SEARCH WITH API KEY (Public Access) ---
-  async findFolderId(name, parentId = 'root') {
-    const q = `mimeType='application/vnd.google-apps.folder' and name='${name}' and '${parentId}' in parents and trashed=false`;
-    const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&key=${this.GOOGLE_API_KEY}`;
-    const res = await fetch(url);
-    const data = await res.json();
-    if (data.error) { console.error("Drive API Error:", data.error); return null; }
-    return (data.files && data.files.length > 0) ? data.files[0].id : null;
-  }
-
-  // --- GOOGLE DRIVE HELPER: FIND OR CREATE ---
-  async findOrCreateFolder(name, parentId = 'root') {
-    // 1. Search first
-    const existingId = await this.findFolderId(name, parentId);
-    if (existingId) return existingId;
-
-    // 2. Create if missing
-    const createUrl = 'https://www.googleapis.com/drive/v3/files';
-    const metadata = { name: name, mimeType: 'application/vnd.google-apps.folder', parents: [parentId] };
-    const createRes = await fetch(createUrl, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${this.accessToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(metadata)
-    });
-    const createData = await createRes.json();
-    return createData.id;
-  }
-
-  // --- 1. FIND TEMPLATE (Dynamic Path) ---
-  async findTemplateBlob(folderPathArray) {
-    console.log("[Generator] Searching Template Path:", folderPathArray.join('/'));
-    
-    // Start from Configured Template Root Folder (Direct ID access avoids 403 on 'root' search)
-    let currentId = this.TEMPLATE_ROOT_ID;
-    if (!currentId || currentId.startsWith("1XX")) {
-        throw new Error("Harap konfigurasi ID Folder Template di main.js (baris ~17)");
-    }
-
-    // Traverse subfolders
-    for (const folderName of folderPathArray) {
-        if (!folderName) continue;
-        let nextId = await this.findFolderId(folderName, currentId);
-        
-        if (!nextId) {
-             console.warn(`Folder '${folderName}' not found inside parent ID ${currentId}.`);
-             throw new Error(`Template folder tidak ditemukan: ${folderName}`);
+        if(!u || !p) {
+            if(err) { err.querySelector("span").textContent = "Mohon isi username & password."; err.classList.remove("hidden"); }
+            return;
         }
-        currentId = nextId;
+
+        if(btn) { btn.disabled = true; btn.textContent = "Verifikasi..."; }
+        if(err) err.classList.add("hidden");
+
+        try {
+            const user = await this.auth.login(u, p);
+            this.ui.hideLoginModal();
+            this.ui.showNotification(`Selamat datang, ${user.username}!`, "success");
+            
+            // Trigger background reload if data was missing
+            if(!this.usersData || this.usersData.length === 0) this.loadInitialData();
+
+        } catch(e) {
+            if(err) { 
+                err.querySelector("span").textContent = e.message || "Login gagal."; 
+                err.classList.remove("hidden"); 
+            }
+        } finally {
+            if(btn) { btn.disabled = false; btn.textContent = "Masuk"; }
+        }
     }
 
-    // Find .docx file inside final folder (using API Key for public access)
-    const q = `mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document' and '${currentId}' in parents and trashed=false`;
-    const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&key=${this.GOOGLE_API_KEY}`;
-    const res = await fetch(url);
-    const data = await res.json();
+    async handleSendResetLink() {
+        const input = document.getElementById("forgotInput")?.value?.trim();
+        const msg = document.getElementById("forgotMessage");
+        const btn = document.getElementById("sendResetBtn");
 
-    if (!data.files || data.files.length === 0) {
-        throw new Error("Tidak ada file .docx di folder template tujuan.");
+        if(!input) {
+            msg.textContent = "Mohon isi email/HP.";
+            msg.className = "text-xs p-2 rounded text-center bg-red-100 text-red-600 block";
+            return;
+        }
+
+        if(btn) { btn.disabled = true; btn.textContent = "Memproses..."; }
+        
+        try {
+            await this.auth.sendResetLink(input);
+            msg.textContent = `Link reset telah dikirim ke ${input}.`;
+            msg.className = "text-xs p-2 rounded text-center bg-green-100 text-green-600 block";
+        } catch(e) {
+            msg.textContent = e.message;
+            msg.className = "text-xs p-2 rounded text-center bg-red-100 text-red-600 block";
+        } finally {
+            if(btn) { btn.disabled = false; btn.textContent = "Kirim Link Reset"; }
+        }
     }
 
-    const file = data.files[0]; 
-    console.log("[Generator] Found Template:", file.name);
-    return await this.downloadFileBlob(file.id);
-  }
+    async handleGenerate() {
+        const formData = this.collectFormData();
+        
+        // Validation (Simple for now, relies on required attribs mostly, 
+        // but we should use the rules from Data.js if stricter validation needed)
+        // For brevity, using basic check
+        if(!this.auth.getCurrentUser()) {
+            this.ui.showNotification("Sesi habis. Silakan login kembali.", "error");
+            this.ui.showLoginModal();
+            return;
+        }
 
-  // --- 2. UPLOAD RESULT (Dynamic Path) ---
-  // --- 2. UPLOAD RESULT TO APP OWNER'S DRIVE (Zero-Login via GAS) ---
-  async uploadToGoogleDrive(blob, filename, pathArray) {
-    if (!this.GAS_UPLOAD_URL) throw new Error("GAS Upload URL not configured!");
-    
-    console.log("[Generator] Uploading to GDrive via GAS:", pathArray.join('/'));
-    const base64 = await this.blobToBase64(blob);
-    
-    // Payload for Google Apps Script
-    const payload = {
-      filename: filename,
-      file: base64,
-      path: pathArray
-    };
+        this.ui.showLoadingModal();
+        this.generatedResults = [];
 
-    // Post to GAS Web App (No OAuth token needed from user)
-    const res = await fetch(this.GAS_UPLOAD_URL, {
-      method: "POST",
-      body: JSON.stringify(payload)
-    });
-    
-    const data = await res.json();
-    if(data.status !== "success") throw new Error(data.message || "GAS Upload Failed");
-    
-    console.log("[Generator] Upload Success:", data.url);
-    return data.url;
-  }
+        try {
+            // Determine Scopes
+            const scopes = [];
+            if(formData.lingkupInternal) scopes.push("internal");
+            if(formData.lingkupEksternal) scopes.push("eksternal");
+            if(scopes.length === 0) scopes.push("internal");
 
-  blobToBase64(blob) {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(blob);
-        reader.onload = () => resolve(reader.result.split(',')[1]);
-        reader.onerror = error => reject(error);
-    });
-  }
+            // Generate
+            for(const scope of scopes) {
+                const res = await this.generator.generateLetter(formData, scope, this.auth.getCurrentUser());
+                this.generatedResults.push(res);
+            }
 
-  // --- GENERATION HANDLER ---
-  async handleGenerate(isRetry = false) {
-    if (this.isGenerating && !isRetry) return;
-    if(!this.validateForm()) { return; }
-    
-    this.isGenerating = true;
-    this.showLoadingModal();
-    this.generatedResults = [];
+            this.ui.hideLoadingModal();
+            this.ui.showSuccessModal();
 
-    try {
-      const formData = this.collectFormData();
-      const scopes = [];
-      if(formData.lingkupInternal) scopes.push("internal");
-      if(formData.lingkupEksternal) scopes.push("eksternal");
-      
-      if(scopes.length === 0) scopes.push("internal"); // Default fallback
-
-      for(const scope of scopes) {
-          const res = await this.generateSingleLetter(formData, scope);
-          this.generatedResults.push(res);
-      }
-
-      this.showSuccessModal(); 
-
-    } catch(e) {
-      console.error(e);
-      this.showNotification("Gagal: " + (e.message||"Error"), "error");
-    } finally {
-      this.hideLoadingModal();
-      this.isGenerating = false;
+        } catch(e) {
+            this.ui.hideLoadingModal();
+            console.error(e);
+            this.ui.showNotification("Gagal: " + e.message, "error");
+        }
     }
-  }
 
-  async generateSingleLetter(formData, scopeType) {
-      // 2. Build Path for Template
-      const templatePath = [];
-      templatePath.push(formData.sifatSurat);
-      templatePath.push(formData.jenisSurat);
-      templatePath.push(scopeType); // internal or eksternal
-      
-      if (formData.jenisSurat === "Kurikulum Silabus") {
-          if (formData.jenisKurikulum) templatePath.push(formData.jenisKurikulum);
-          if (formData.jenisKurikulum === "KPK" && formData.perihalKPK) templatePath.push(formData.perihalKPK);
-      }
-      
-      let varian = "";
-      // Internal letters do not use Varian in path
-      if (scopeType !== "internal") {
-          if (formData.varianIndividu) varian = "individu";
-          else if (formData.varianPenugasan) varian = "penugasan";
-          else if (formData.varianKelompok) varian = "kelompok";
-      }
-      if(varian) templatePath.push(varian);
-
-      // 3. Find Template
-      const blob = await this.findTemplateBlob(templatePath);
-
-      // 4. Fill Template
-      const payload = this.buildDocxPayload(formData);
-
-      await this.ensureDocxLibsLoaded();
-      const renderedBlob = this.renderDocx(await blob.arrayBuffer(), payload);
-      
-      const normalize = OneDrivePathHelper.normalize;
-      const filename = `surat_${normalize(formData.sifatSurat)}_${scopeType}_${Date.now()}.docx`;
-
-      // 5. Build Output Path
-      const username = this.currentUser.username || "user";
-      const outputPath = [username];
-      if (formData.sifatSurat) outputPath.push(normalize(formData.sifatSurat));
-      if (formData.jenisKurikulum) outputPath.push(normalize(formData.jenisKurikulum));
-      else if (formData.jenisSurat) outputPath.push(normalize(formData.jenisSurat));
-      
-      this.lastOutputPath = outputPath; // Store last used for retry if needed
-
-      // 6. Upload
-      const url = await this.uploadToGoogleDrive(renderedBlob, filename, outputPath);
-      
-      // Force Google Docs Editor Mode (replace /view with /edit) regarding user request
-      let editUrl = url;
-      if (url && url.includes("/view")) {
-          editUrl = url.replace("/view", "/edit");
-      }
-      
-      return { url: editUrl, filename, blob: renderedBlob };
-  }
-
-  // --- ACTIONS ---
-  handleDownload() {
-      if (this.generatedResults && this.generatedResults.length > 0) {
-          this.generatedResults.forEach(res => {
-              if (res.blob && res.filename) window.saveAs(res.blob, res.filename);
-          });
-          this.showNotification("Semua file diunduh.", "success");
-      } else if (this.generatedBlob && this.generatedFilename) {
-          window.saveAs(this.generatedBlob, this.generatedFilename);
-          this.showNotification("File diunduh.", "success");
-      }
-      // Removed closeSuccessModal to allow user to continue actions
-  }
-
-  handlePreview() {
-      // Support Multiple Files
-      if (this.generatedResults && this.generatedResults.length > 0) {
-          let opened = 0;
-          this.generatedResults.forEach(res => {
-              if (res.url) { 
-                  // Force Editor Mode
-                  let finalUrl = res.url; 
-                  window.open(finalUrl, "_blank"); 
-                  opened++; 
-              }
-          });
-          if (opened > 0) return;
-      }
-      
-      if (this.generatedFileUrl) {
-          window.open(this.generatedFileUrl, "_blank");
-      } else if (this.generatedBlob) {
-          this.performUploadAndPreview();
-      } else {
-          alert("Link file belum tersedia.");
-      }
-  }
-
-  async performUploadAndPreview() {
-      if (!this.generatedBlob || !this.lastOutputPath) return;
-      
-      this.showLoadingModal();
-      try {
-          console.log("[Preview] Uploading pending file to Drive...");
-          this.generatedFileUrl = await this.uploadToGoogleDrive(this.generatedBlob, this.generatedFilename, this.lastOutputPath);
-          
-          this.hideLoadingModal();
-          this.showNotification("File berhasil diupload!", "success");
-          window.open(this.generatedFileUrl, "_blank");
-      } catch(e) {
-          this.hideLoadingModal();
-          console.error(e);
-          this.showNotification("Gagal upload ke Drive: " + e.message, "error");
-      }
-  }
-
-  async copyToClipboard(text) {
-      if (!text) return false;
-      if (navigator.clipboard?.writeText) {
-          await navigator.clipboard.writeText(text);
-          return true;
-      }
-      const textarea = document.createElement("textarea");
-      textarea.value = text;
-      textarea.style.position = "fixed";
-      textarea.style.opacity = "0";
-      document.body.appendChild(textarea);
-      textarea.focus();
-      textarea.select();
-      let ok = false;
-      try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
-      textarea.remove();
-      return ok;
-  }
-
-  closePreviewModal() {
-      const modal = document.getElementById("previewModal");
-      if(modal) modal.classList.add("hidden");
-  }
-
-  async handleSendToTask() {
-      if ((!this.generatedResults || this.generatedResults.length === 0) && !this.generatedFileUrl) {
-          alert("Link file belum tersedia.");
-          return;
-      }
-
-      let message = "";
-      let primaryUrl = "";
-      let primaryName = "";
-      const recipient = this.recipientOptions.find(r => r.id === this.selectedRecipientId);
-
-      if (this.generatedResults && this.generatedResults.length > 0) {
-          message = "Surat telah dibuat. Link GDrive:\n";
-          this.generatedResults.forEach(res => {
-              let label = "File";
-              if (res.filename.toLowerCase().includes("internal")) label = "Internal";
-              else if (res.filename.toLowerCase().includes("eksternal")) label = "Eksternal";
-              message += `- ${label}: ${res.url}\n`;
-              
-              if(!primaryUrl) { primaryUrl = res.url; primaryName = res.filename; }
-          });
-      } else {
-          message = `Surat telah dibuat. Link GDrive: ${this.generatedFileUrl}`;
-          primaryUrl = this.generatedFileUrl;
-          primaryName = this.generatedFilename;
-      }
-
-      if (recipient) {
-          message += `\nPenerima: ${recipient.name}`;
-      }
-
-      let copied = false;
-      try {
-          copied = await this.copyToClipboard(primaryUrl);
-      } catch (e) {
-          console.warn("Clipboard copy failed:", e);
-      }
-
-      window.parent.postMessage({
-          type: "SEND_GENERATED_LETTER",
-          payload: {
-              filename: primaryName,
-              fileUrl: primaryUrl, 
-              message: message,
-              recipient: recipient || null
-          }
-      }, "*");
-
-      if (copied) this.showNotification("Link disalin & dikirim!", "success");
-      else this.showNotification("Link dikirim (salin otomatis gagal).", "info");
-      // Removed closeSuccessModal to allow user to continue actions
-  }
-
-  // --- HELPERS ---
-  async downloadFileBlob(fileId) {
-      // Use API Key for public file access (no login required)
-      const url = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&key=${this.GOOGLE_API_KEY}`;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error("Gagal download template file. Pastikan file bersifat publik.");
-      return await res.blob();
-  }
-
-  populateTimeSlots() {
-    const el = document.getElementById("waktuPelaksanaan");
-    if (el && el.tagName === 'SELECT') {
-        el.innerHTML = '<option value="">-- Pilih Waktu --</option>';
-        for(let h=7; h<=20; h++) {
-            ['00', '30'].forEach(m => {
-                const time = `${h.toString().padStart(2, '0')}:${m}`;
-                const option = document.createElement("option");
-                option.value = time;
-                option.textContent = time;
-                el.appendChild(option);
+    handlePreview() {
+        if(this.generatedResults.length > 0) {
+            this.generatedResults.forEach(res => {
+                if(res.url) window.open(res.url, "_blank");
             });
         }
     }
-  }
 
-  async fetchUsersFromSupabase() {
-    try {
-      const client = await this.getSupabaseClient(); if(!client) return false;
-      const { data } = await client.from("users").select("*").order("username");
-      if(data?.length) { 
-        this.usersData = data; 
-        this.recipientOptions = data.map(u => ({
-            id: u.email,
-            name: `${u.username} (${u.position} - ${u.team})`,
-            email: u.email
-        }));
-        return true; 
-      }
-    } catch(e) { console.warn("Supabase Users Error:", e); }
-    return false;
-  }
-
-  populateRecipients() {
-    const select = document.getElementById("recipientSelect");
-    if (!select) return;
-    const current = select.value || this.selectedRecipientId;
-    select.innerHTML = '<option value="">Pilih penerima (opsional)</option>';
-    
-    const opts = this.recipientOptions || [];
-    opts.forEach((r) => {
-        const o = document.createElement("option");
-        o.value = r.id;
-        o.textContent = r.name;
-        select.appendChild(o);
-    });
-    if (current) select.value = current;
-  }
-
-  populateFacilitators(opts={}) {
-    [1,2,3].forEach(i => {
-      const el=document.getElementById(`namaFasilitator${i}`); if(!el) return;
-      const cv=el.value;
-      el.innerHTML = opts.loading ? "<option>Loading...</option>" : '<option value="">-- Pilih --</option>';
-      if(!opts.loading && this.facilitators) {
-          this.facilitators.forEach(f => { 
-              const o=document.createElement("option"); o.value=f.nama; o.textContent=f.nama; el.appendChild(o); 
-          });
-          if(cv) el.value=cv;
-      }
-    });
-  }
-
-  refreshUI() { this.applyVisibilityRules(); this.saveFormState(); }
-  
-  applyVisibilityRules() {
-    const js = document.getElementById("jenisSurat")?.value;
-    const jk = document.getElementById("jenisKurikulum")?.value;
-    const ss = document.getElementById("sifatSurat")?.value;
-    const varianPenugasan = document.getElementById("varianPenugasan")?.checked;
-    const varianKelompok = document.getElementById("varianKelompok")?.checked;
-    const varianIndividu = document.getElementById("varianIndividu")?.checked;
-
-    const hideMitraTopik = js==="Bahan Tayang Standar" || (js==="Kurikulum Silabus" && jk==="ECP");
-    this.setFieldVisible("mitraKerjasama", !hideMitraTopik);
-    this.setFieldVisible("topikRapat", !hideMitraTopik);
-    this.setFieldVisible("pimpinan", varianPenugasan);
-    this.setFieldVisible("instansi", varianPenugasan);
-
-    const fs = document.getElementById("facilitatorSection");
-    if(fs) {
-       // Only show if Jenis Surat is selected AND includes Eksternal (or both)
-       // If Internal Only -> Hide
-       const isInternal = document.getElementById("lingkupInternal")?.checked;
-       const isExternal = document.getElementById("lingkupEksternal")?.checked;
-       const internalOnly = isInternal && !isExternal;
-       
-       if (js && js !== "" && !internalOnly) this.showSection(fs); else this.hideSection(fs);
-    }
-
-    const curriculumSec = document.getElementById("curriculumSection");
-    const btsSec = document.getElementById("btsSection");
-    if (js === "Kurikulum Silabus") { this.showSection(curriculumSec); this.hideSection(btsSec); }
-    else if (js === "Bahan Tayang Standar") { 
-        this.hideSection(curriculumSec); 
-        this.showSection(btsSec);
-        
-        // Handle BTS Sections Visibility
-        const jumlahBTS = parseInt(document.getElementById("jumlahBTS")?.value) || 0;
-        for(let i=1; i<=3; i++) {
-            const sec = document.getElementById(`bts${i}Section`);
-            if(sec) {
-                if(i <= jumlahBTS) this.showSection(sec); else this.hideSection(sec);
-            }
+    handleDownload() {
+        if(this.generatedResults.length > 0) {
+            this.generatedResults.forEach(res => {
+                if(res.blob) window.saveAs(res.blob, res.filename);
+            });
+            this.ui.showNotification("Mulai mengunduh...", "success");
         }
     }
-    else { this.hideSection(curriculumSec); this.hideSection(btsSec); }
 
-    const kpkSec = document.getElementById("perihalKPKSection");
-    const ecpSec = document.getElementById("tahapECPSection");
-    if (js === "Kurikulum Silabus") {
-        if (jk === "KPK") { this.showSection(kpkSec); this.hideSection(ecpSec); }
-        else if (jk === "ECP") { this.hideSection(kpkSec); this.showSection(ecpSec); }
-        else { this.hideSection(kpkSec); this.hideSection(ecpSec); }
-    } else { this.hideSection(kpkSec); this.hideSection(ecpSec); }
-
-    const jumlahSec = document.getElementById("jumlahFasilitatorSection");
-    if(varianKelompok) this.showSection(jumlahSec); else this.hideSection(jumlahSec);
-
-    let n = 0;
-    if (varianKelompok) n = parseInt(document.getElementById("jumlahFasilitator")?.value) || 0;
-    else if (varianIndividu || varianPenugasan) n = 1;
-
-    for(let i=1; i<=3; i++) {
-        const sec = document.getElementById(`fasilitator${i}Section`);
-        if (i <= n) this.showSection(sec); else this.hideSection(sec);
-    }
-  }
-
-  async getSupabaseClient() {
-    if(this.supabase) return this.supabase;
-    if(window.SUPABASE_URL && window.supabase) this.supabase = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
-    return this.supabase;
-  }
-  async refreshFacilitatorsFromSupabase() {
-    try {
-      const client = await this.getSupabaseClient(); if(!client) return false;
-      const { data } = await client.from("facilitators").select("nama, perusahaan").order("nama");
-      if(data?.length) { this.facilitators = data; return true; }
-    } catch(e) { console.warn(e); }
-    return false;
-  }
-
-  // --- FIXED: COLLECT DATA (ROBUST) ---
-  collectFormData() {
-    const d = {};
-    const get = (id) => this.isFieldVisible(id) ? document.getElementById(id).value : "";
-    const chk = (id) => this.isFieldVisible(id) ? document.getElementById(id).checked : false;
-    
-    // Basics
-    d.jenisSurat = get("jenisSurat");
-    d.sifatSurat = get("sifatSurat");
-    d.jenisKurikulum = get("jenisKurikulum");
-    d.perihalKPK = get("perihalKPK");
-    d.bulanSurat = get("bulanSurat");
-    d.lampiran = get("lampiran");
-    d.mitraKerjasama = get("mitraKerjasama");
-    d.topikRapat = get("topikRapat");
-    d.tanggalPelaksanaan = get("tanggalPelaksanaan");
-    d.waktuPelaksanaan = get("waktuPelaksanaan");
-    // tahapECP: Read directly from element if ECP is selected (bypass visibility check)
-    const tahapEl = document.getElementById("tahapECP");
-    d.tahapECP = (d.jenisKurikulum === "ECP" && tahapEl) ? tahapEl.value : "";
-    d.lingkupInternal = chk("lingkupInternal");
-    d.lingkupEksternal = chk("lingkupEksternal");
-    d.jumlahBTS = get("jumlahBTS");
-    [1,2,3].forEach(n => {
-        d[`btsPelatihan${n}`] = get(`btsPelatihan${n}`);
-        d[`btsMateri${n}`] = get(`btsMateri${n}`);
-    });
-    
-    d.varianIndividu = chk("varianIndividu");
-    d.varianPenugasan = chk("varianPenugasan");
-    d.varianKelompok = chk("varianKelompok");
-    d.jumlahFasilitator = get("jumlahFasilitator");
-    d.namaFasilitator1 = get("namaFasilitator1");
-    d.namaFasilitator2 = get("namaFasilitator2");
-    d.namaFasilitator3 = get("namaFasilitator3");
-    d.pimpinan = get("pimpinan");
-    d.instansi = get("instansi");
-
-    // Facilitators 1, 2, 3
-    [1, 2, 3].forEach(n => {
-       const nameVal = get(`namaFasilitator${n}`);
-       d[`namaFasilitator${n}`] = nameVal;
-       
-       let instansiVal = "";
-       if (nameVal && this.facilitators) {
-           // 1. Try to find in DB array
-           const f = this.facilitators.find(x => x.nama === nameVal);
-           if (f) {
-               instansiVal = f.perusahaan || f.instansi || ""; 
-           } else {
-               // 2. Fallback: Read from the UI Label directly
-               const labelEl = document.getElementById(`instansiFasilitator${n}`);
-               if (labelEl) instansiVal = labelEl.textContent.replace("Instansi: ", "").trim();
-           }
-       }
-       d[`instansiFasilitator${n}`] = instansiVal;
-    });
-
-    return d;
-  }
-
-  buildDocxPayload(formData) {
-    const safe = (v) => (v == null ? "" : String(v));
-    
-    // Indonesian Date
-    let hariTanggal = "";
-    if (formData.tanggalPelaksanaan) {
-      try {
-        const d = new Date(formData.tanggalPelaksanaan);
-        hariTanggal = new Intl.DateTimeFormat('id-ID', { 
-            weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' 
-        }).format(d);
-      } catch (e) { hariTanggal = formData.tanggalPelaksanaan; }
-    }
-
-    // BTS Dynamic Clause Construction
-    const btsItems = [];
-    const count = parseInt(formData.jumlahBTS) || 0;
-    for(let i=1; i<=count; i++) {
-        const m = formData[`btsMateri${i}`];
-        const p = formData[`btsPelatihan${i}`];
-        if(m && p) btsItems.push({ materi: m, pelatihan: p });
-    }
-
-    let btsClause = "";
-    if (btsItems.length === 1) {
-        btsClause = `topik ${btsItems[0].materi} yang berada pada pelatihan ${btsItems[0].pelatihan}`;
-    } else if (btsItems.length > 1) {
-        // "topik A (Pelatihan X), topik B (Pelatihan Y), dan topik C (Pelatihan Z)"
-        const parts = btsItems.map(x => `topik ${x.materi} (Pelatihan ${x.pelatihan})`);
-        const last = parts.pop();
-        btsClause = parts.length > 0 ? `${parts.join(', ')}, dan ${last}` : `${last}`; 
-        if(btsItems.length === 2) btsClause = `${parts[0]} dan ${last}`;
-    }
-
-    return {
-      bulan_angka: "01", 
-      bulan_huruf: formData.bulanSurat,
-      hari_tanggal: hariTanggal,
-      waktu: safe(formData.waktuPelaksanaan),
-      jenis_surat: safe(formData.jenisSurat),
-      sifat_surat: safe(formData.sifatSurat),
-      bulan_surat: formData.bulanSurat,
-      lampiran: safe(formData.lampiran),
-      mitra_kerjasama: safe(formData.mitraKerjasama),
-      topik_rapat: safe(formData.topikRapat),
-      
-      // BTS Multi-Support
-      bts_clause: btsClause,
-      bts_list: btsItems,
-
-      // Legacy BTS (Single) - Kept for backward compatibility
-      bts_pelatihan_1: safe(formData.btsPelatihan1),
-      bts_materi_1: safe(formData.btsMateri1),
-      bts_pelatihan_2: safe(formData.btsPelatihan2),
-      bts_materi_2: safe(formData.btsMateri2),
-      bts_pelatihan_3: safe(formData.btsPelatihan3),
-      bts_materi_3: safe(formData.btsMateri3),
-      
-      // Facilitator names
-      fasilitator1: safe(formData.namaFasilitator1),
-      fasilitator2: safe(formData.namaFasilitator2),
-      fasilitator3: safe(formData.namaFasilitator3),
-      // Facilitator companies
-      instansi_fasilitator1: safe(formData.instansiFasilitator1),
-      instansi_fasilitator2: safe(formData.instansiFasilitator2),
-      instansi_fasilitator3: safe(formData.instansiFasilitator3),
-      perusahaan1: safe(formData.instansiFasilitator1),
-      perusahaan2: safe(formData.instansiFasilitator2),
-      perusahaan3: safe(formData.instansiFasilitator3),
-      // Others
-      pimpinan: safe(formData.pimpinan),
-      instansi: safe(formData.instansi),
-      // ECP specific
-      tahap_ECP: safe(formData.tahapECP)
-    };
-  }
-
-  getFieldWrapper(id) { const el=document.getElementById(id); return el ? (document.getElementById(`${id}Group`)||el.closest(".form-group")||el.parentElement) : null; }
-  setFieldVisible(id, vis) { const w=this.getFieldWrapper(id); if(!w) return; w.style.display = vis ? "" : "none"; if(!vis) { const el=document.getElementById(id); if(el) (el.type==="checkbox"?el.checked=false:el.value=""); } }
-  isFieldVisible(id) { const w=this.getFieldWrapper(id); return w ? w.style.display!=="none" && !w.closest(".section-hidden") : true; }
-  showSection(el) { if(el) { el.classList.remove("section-hidden"); el.classList.add("section-visible"); this.safeAnime({targets:el, opacity:[0,1], translateY:[-20,0], duration:500}); } }
-  hideSection(el) { if(el) { el.classList.remove("section-visible"); el.classList.add("section-hidden"); } }
-  updateFacilitatorFields() { this.refreshUI(); } 
-  handleFasilitatorChange(e, i) { const val=e.target.value; const div=document.getElementById(`instansiFasilitator${i}`); if(val&&this.facilitators){ const f=this.facilitators.find(x=>x.nama===val); if(div) div.textContent=f?`Instansi: ${f.perusahaan}`:""; } }
-  handleRecipientChange(e) { this.selectedRecipientId = e?.target?.value || ""; }
-  async fetchBTSMaterials() {
-    try {
-        const client = await this.getSupabaseClient();
-        if (!client) throw new Error("Supabase client not initialized");
-
-        const { data, error } = await client.from('bts_materials').select('*');
-        if (error) throw error;
+    handleSendToTask() {
+        if(this.generatedResults.length === 0) return;
         
-        // Group by Category
-        this.btsData = {};
-        data.forEach(item => {
-            if (!this.btsData[item.category]) this.btsData[item.category] = [];
-            this.btsData[item.category].push(item.topic);
-        });
-        
-        this.populateBTSPrograms();
-    } catch (e) {
-        console.error("Gagal load BTS Materials:", e);
-    }
-  }
+        const recipientId = document.getElementById("recipientSelect")?.value;
+        const recipient = this.usersData?.find(u => u.email === recipientId) 
+            ? { 
+                id: recipientId, 
+                name: this.usersData.find(u => u.email === recipientId).username,
+                channel: "Komentar" 
+              } 
+            : null;
 
-  populateBTSPrograms() { 
-      [1,2,3].forEach(i => { 
-          const el = document.getElementById(`btsPelatihan${i}`); 
-          if(!el) return;
-          el.innerHTML = '<option value="">-- Pilih Kategori --</option>'; // Reset
-          
-          if(this.btsData) {
-              Object.keys(this.btsData).forEach(k => { 
-                  const o = document.createElement("option"); 
-                  o.value = k; 
-                  o.textContent = k; 
-                  el.appendChild(o); 
-              }); 
-          }
-      }); 
-  }
-
-  handleBTSPelatihanChange(index) {
-      const catEl = document.getElementById(`btsPelatihan${index}`);
-      const matEl = document.getElementById(`btsMateri${index}`);
-      if(!catEl || !matEl) return;
-      
-      const category = catEl.value;
-      matEl.innerHTML = '<option value="">-- Pilih Materi --</option>'; // Reset
-      
-      if(category && this.btsData && this.btsData[category]) {
-          this.btsData[category].forEach(topic => {
-              const o = document.createElement("option");
-              o.value = topic;
-              o.textContent = topic;
-              matEl.appendChild(o);
-          });
-      }
-  }
-
-  fetchTemplateMetadata(folderKey) { return null; } 
-  renderDocx(buf, data) { const zip = new window.PizZip(buf); const doc = new window.docxtemplater(zip, { paragraphLoop:true, linebreaks:true, delimiters:{start:"[", end:"]"} }); doc.render(data); return doc.getZip().generate({type:"blob", mimeType:"application/vnd.openxmlformats-officedocument.wordprocessingml.document"}); }
-  async ensureDocxLibsLoaded() { 
-      const load = (src) => new Promise(r => { if(document.querySelector(`script[src="${src}"]`)) return r(); const s=document.createElement("script"); s.src=src; s.onload=r; document.head.appendChild(s); }); 
-      await load("https://cdn.jsdelivr.net/npm/pizzip@3.1.7/dist/pizzip.min.js"); 
-      await load("https://cdn.jsdelivr.net/npm/docxtemplater@3.50.0/build/docxtemplater.js"); 
-      await load("https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"); 
-      await load("https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js");
-  }
-  validateField(field) { if(!field) return true; const val=field.value.trim(); const err=document.getElementById(`${field.id}Error`); if(err) err.classList.remove("show"); if(this.isFieldVisible(field.id) && this.getRequiredFields().includes(field.id) && !val) { this.showFieldError(field.id, "Wajib diisi"); return false; } return true; }
-  
-  validateForm() { 
-    const fieldLabels = {
-      jenisSurat: "Jenis Surat",
-      sifatSurat: "Sifat Surat", 
-      bulanSurat: "Bulan Surat",
-      tanggalPelaksanaan: "Tanggal Pelaksanaan",
-      waktuPelaksanaan: "Waktu Pelaksanaan",
-      jenisKurikulum: "Jenis Kurikulum",
-      topikRapat: "Judul Pelatihan / Topik Rapat",
-      lingkupSurat: "Lingkup Surat (Internal/Eksternal)",
-      varianSurat: "Varian Surat (Individu/Penugasan/Kelompok)"
-    };
-    
-    const missing = [];
-    
-    // Check regular required fields
-    this.getRequiredFields().forEach(id => { 
-      const field = document.getElementById(id);
-      if(!this.validateField(field)) {
-        missing.push(fieldLabels[id] || id);
-      }
-    });
-    
-    // Check Lingkup Surat (at least one checkbox must be checked)
-    const lingkupInternal = document.getElementById("lingkupInternal")?.checked;
-    const lingkupEksternal = document.getElementById("lingkupEksternal")?.checked;
-    if (!lingkupInternal && !lingkupEksternal) {
-      missing.push(fieldLabels.lingkupSurat);
-    }
-    
-    // Check Varian Surat (at least one checkbox must be checked) - if facilitator section is visible
-    const fsVisible = !document.getElementById("facilitatorSection")?.classList.contains("section-hidden");
-    if (fsVisible) {
-      const varianIndividu = document.getElementById("varianIndividu")?.checked;
-      const varianPenugasan = document.getElementById("varianPenugasan")?.checked;
-      const varianKelompok = document.getElementById("varianKelompok")?.checked;
-      if (!varianIndividu && !varianPenugasan && !varianKelompok) {
-        missing.push(fieldLabels.varianSurat);
-      }
-    }
-    
-    if (missing.length > 0) {
-      this.showWarningModal(missing);
-      return false;
-    }
-    return true; 
-  }
-  getRequiredFields() { const ss=document.getElementById("sifatSurat")?.value; let req=["jenisSurat","sifatSurat","bulanSurat","tanggalPelaksanaan"]; if(ss==="undangan") req.push("waktuPelaksanaan"); return req.filter(id=>this.isFieldVisible(id)); }
-  showFieldError(id, msg) { const e=document.getElementById(`${id}Error`); if(e) { e.textContent=msg; e.classList.add("show"); } }
-  
-  showWarningModal(missingFields) {
-    const modal = document.getElementById("warningModal");
-    const card = document.getElementById("warningModalCard");
-    const list = document.getElementById("warningList");
-    
-    if (!modal || !list) return;
-    
-    // Populate list
-    list.innerHTML = missingFields.map(f => `<li class="flex items-center gap-2"><span class="text-yellow-500">•</span>${f}</li>`).join("");
-    
-    // Show modal
-    modal.classList.remove("hidden");
-    requestAnimationFrame(() => {
-      if(card) {
-        card.classList.remove("opacity-0", "scale-90");
-        card.classList.add("opacity-100", "scale-100");
-      }
-    });
-  }
-  
-  closeWarningModal() {
-    const modal = document.getElementById("warningModal");
-    const card = document.getElementById("warningModalCard");
-    if(card) {
-      card.classList.remove("opacity-100", "scale-100");
-      card.classList.add("opacity-0", "scale-90");
-    }
-    setTimeout(() => { if(modal) modal.classList.add("hidden"); }, 300);
-  }
-  
-  showSuccessModal() { 
-    const modal = document.getElementById("successModal");
-    if(!modal) return;
-
-    // Dynamic List Logic
-    const listEl = document.getElementById("generatedFilesList");
-    const actionsEl = document.getElementById("generatedActionsDefault");
-    
-    if (listEl && actionsEl && this.generatedResults && this.generatedResults.length > 1) {
-        listEl.innerHTML = "";
-        listEl.classList.remove("hidden");
-        actionsEl.classList.remove("hidden"); // Keep default buttons visible!
+        let message = "Surat telah dibuat. Link GDrive:\n";
+        let primaryUrl = "";
         
         this.generatedResults.forEach(res => {
-            const div = document.createElement("div");
-            div.className = "flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-100";
-            
-            // Extract label
-            let label = res.filename;
-            if (label.toLowerCase().includes("internal")) label = "Surat Lingkup Internal";
-            else if (label.toLowerCase().includes("eksternal")) label = "Surat Lingkup Eksternal";
-            
-            div.innerHTML = `
-                <div class="flex items-center gap-2">
-                    <svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                    <span class="font-medium text-gray-700 truncate max-w-[150px]" title="${res.filename}">${label}</span>
-                </div>
-                <div class="flex gap-2">
-                   <button onclick="window.open('${res.url}', '_blank')" class="text-blue-600 hover:text-blue-800 text-xs font-bold px-2 py-1 bg-blue-50 rounded uppercase tracking-wide">View</button>
-                   <button onclick="window.__letterGenerator.downloadFileBlob('${res.blob ? '' : ''}')" class="text-gray-500 hidden">Down</button> 
-                </div>
-            `;
-            listEl.appendChild(div);
+             message += `- ${res.filename}: ${res.url}\n`;
+             if(!primaryUrl) primaryUrl = res.url;
         });
-    } else {
-        if(listEl) listEl.classList.add("hidden");
-        if(actionsEl) actionsEl.classList.remove("hidden");
+
+        // Post Message to parent (React App)
+        window.parent.postMessage({
+            type: "SEND_GENERATED_LETTER",
+            payload: {
+                filename: this.generatedResults[0].filename, // Use first as primary
+                fileUrl: primaryUrl, 
+                message: message,
+                recipient: recipient
+            }
+        }, "*");
+        
+        this.ui.showNotification("Link dikirim ke sistem utama!", "success");
     }
 
-    modal.classList.remove("hidden");
-    const card = document.getElementById("successModalCard"); 
-    if(card) {
-        requestAnimationFrame(() => {
-            card.classList.remove("opacity-0", "scale-90");
-            card.classList.add("opacity-100", "scale-100");
+    // --- DOM HELPERS ---
+    
+    collectFormData() {
+        const formData = {};
+        document.querySelectorAll("input, select, textarea").forEach(el => {
+            if(el.type === "checkbox") formData[el.id] = el.checked;
+            else if(el.type === "radio") { if(el.checked) formData[el.name] = el.value; }
+            else formData[el.id] = el.value;
+        });
+        return formData;
+    }
+
+    populateFacilitators() {
+        const list = this.facilitators.map(f => ({ value: f.nama, text: f.nama }));
+        [1,2,3].forEach(i => {
+           this.ui.populateSelect(`namaFasilitator${i}`, list, "-- Pilih Fasilitator --");
         });
     }
-  }
-  closeSuccessModal() {
-    const modal = document.getElementById("successModal");
-    const card = document.getElementById("successModalCard");
-    if(card) {
-        card.classList.remove("opacity-100", "scale-100");
-        card.classList.add("opacity-0", "scale-90");
+
+    populateRecipients() {
+        if(!this.usersData) return;
+        const list = this.usersData.map(u => ({
+             value: u.email,
+             text: `${u.username} (${u.position} - ${u.team})`
+        }));
+        this.ui.populateSelect("recipientSelect", list, "Pilih penerima (opsional)");
     }
-    setTimeout(() => { if(modal) modal.classList.add("hidden"); }, 300);
-  }
-  showLoadingModal() { document.getElementById("loadingModal")?.classList.remove("hidden"); }
-  hideLoadingModal() { document.getElementById("loadingModal")?.classList.add("hidden"); }
-  showNotification(msg, t="info") { const n=document.createElement("div"); n.className=`fixed top-4 right-4 p-4 rounded z-50 text-white ${t==="error"?"bg-red-500":"bg-blue-500"}`; n.textContent=msg; document.body.appendChild(n); setTimeout(()=>n.remove(),3000); }
-  saveFormState() {} loadFormState() {} initializeCharts() {} startParticleAnimation() {} updateProgressBar() {}
+    
+    populateBTSPrograms() {
+        const progs = Object.keys(Data.btsTrainingPrograms);
+        const list = progs.map(p => ({ value: p, text: p }));
+        [1,2,3].forEach(i => {
+            this.ui.populateSelect(`btsPelatihan${i}`, list, "-- Pilih Pelatihan --");
+        });
+    }
+
+    refreshUI() {
+        this.ui.updateProgressBar();
+        this.ui.setFieldVisible("facilitatorSection", 
+            (document.getElementById("jenisSurat")?.value && document.getElementById("lingkupEksternal")?.checked)
+        );
+        // ... Reimplementing specific visibility logic via UIService helper calls
+        // This part needs to mirror previous logic.
+        const js = document.getElementById("jenisSurat")?.value;
+        const jk = document.getElementById("jenisKurikulum")?.value;
+        const hideMitra = js==="Bahan Tayang Standar" || (js==="Kurikulum Silabus" && jk==="ECP");
+        
+        this.ui.setFieldVisible("mitraKerjasama", !hideMitra);
+        this.ui.setFieldVisible("topikRapat", !hideMitra);
+        
+        const vp = document.getElementById("varianPenugasan")?.checked;
+        this.ui.setFieldVisible("pimpinan", vp);
+        this.ui.setFieldVisible("instansi", vp);
+
+        const curSec = document.getElementById("curriculumSection");
+        const btsSec = document.getElementById("btsSection");
+        
+        if (js === "Kurikulum Silabus") { 
+            this.ui.showSection(curSec); 
+            this.ui.hideSection(btsSec); 
+        } else if (js === "Bahan Tayang Standar") { 
+            this.ui.hideSection(curSec); 
+            this.ui.showSection(btsSec);
+            const num = parseInt(document.getElementById("jumlahBTS")?.value) || 0;
+            [1,2,3].forEach(i => {
+                const el = document.getElementById(`bts${i}Section`);
+                if(i <= num) this.ui.showSection(el); else this.ui.hideSection(el);
+            });
+        } else {
+            this.ui.hideSection(curSec); 
+            this.ui.hideSection(btsSec);
+        }
+    }
 }
 
-class OneDrivePathHelper { static normalize(t) { return String(t||"").trim().toLowerCase().replace(/\s+/g,"_").replace(/[^\w\s\-]/g,""); } }
-document.addEventListener("DOMContentLoaded", () => window.__letterGenerator = new LetterGenerator());
+// Initialize
+window.app = new LetterGeneratorApp();
