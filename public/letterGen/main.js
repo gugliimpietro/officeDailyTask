@@ -8,7 +8,7 @@ class LetterGenerator {
     this.generatedFilename = null;
     this.generatedFileUrl = null; 
     this.templateUrl = null;      
-    this.currentUser = { username: "sadiro" }; 
+    this.currentUser = null; // Require login 
     
     // ============================================================
     // ⚠️ GOOGLE CREDENTIALS
@@ -29,6 +29,12 @@ class LetterGenerator {
         { nama: "Fasilitator 3", perusahaan: "Instansi C" }
     ];
     this.facilitators = [];
+    this.recipientOptions = [
+        { id: "ops-team", name: "Tim Operasional", channel: "Komentar" },
+        { id: "owner", name: "Pemilik Tugas", channel: "Komentar" },
+        { id: "custom", name: "Pengguna Lain", channel: "Komentar" }
+    ];
+    this.selectedRecipientId = "";
 
     this.init().catch((err) => console.error("Init error:", err));
   }
@@ -50,19 +56,29 @@ class LetterGenerator {
 
   async init() {
     this.populateTimeSlots();
+    this.showLoginModal(); // Show immediately
     this.initializeUI();
+    // this.populateRecipients(); // Moved after async fetch
     this.setupEventListeners();
     this.initGoogleAuth(); 
 
+    // Fetch Facilitators
     this.populateFacilitators({ loading: true });
     
-    const loaded = await this.refreshFacilitatorsFromSupabase();
-    if (!loaded || this.facilitators.length === 0) {
+    // Parallel Fetch: Facilitators & Users
+    const [facLoaded, usersLoaded] = await Promise.all([
+        this.refreshFacilitatorsFromSupabase(),
+        this.fetchUsersFromSupabase()
+    ]);
+
+    if (!facLoaded || this.facilitators.length === 0) {
         console.warn("Using default facilitators");
         this.facilitators = this.defaultFacilitators;
     }
     
     this.populateFacilitators();
+    this.populateRecipients(); // Now populated with users data
+
     await this.fetchBTSMaterials();
     this.populateBTSPrograms();
     this.loadFormState();
@@ -72,6 +88,10 @@ class LetterGenerator {
     
     this.applyVisibilityRules();
   }
+
+  // ... (initializeUI etc skipped in replacement match if I target init block strictly, wait I need to target init lines)
+  // I will target init specifically first.
+
 
   initializeUI() {
     if (document.getElementById("typewriter")) {
@@ -127,6 +147,12 @@ class LetterGenerator {
     addListener("generateBtn", "click", () => this.handleGenerate(false));
     addListener("resetBtn", "click", () => this.handleReset());
     addListener("formPreviewBtn", "click", () => alert("Klik 'Generate Surat' terlebih dahulu."));
+    
+    // Login
+    addListener("loginBtn", "click", () => this.handleLogin());
+    document.getElementById("loginPassword")?.addEventListener("keypress", (e) => {
+        if(e.key === "Enter") this.handleLogin();
+    });
 
     addListener("modalPreviewBtn", "click", () => this.handlePreview()); 
     addListener("modalSendBtn", "click", () => this.handleSendToTask());
@@ -134,6 +160,7 @@ class LetterGenerator {
     addListener("closeSuccessBtn", "click", () => this.closeSuccessModal());
     addListener("closeWarningBtn", "click", () => this.closeWarningModal());
     addListener("closePreviewBtn", "click", () => this.closePreviewModal());
+    addListener("recipientSelect", "change", (e) => this.handleRecipientChange(e));
 
     document.querySelectorAll("input, select, textarea").forEach((input) => {
       input.addEventListener("change", () => this.saveFormState());
@@ -146,6 +173,46 @@ class LetterGenerator {
         const el = document.getElementById(`btsPelatihan${i}`);
         if(el) el.addEventListener("change", () => this.handleBTSPelatihanChange(i));
     });
+  }
+
+  // --- LOGIN ---
+  showLoginModal() {
+      const m = document.getElementById("loginModal");
+      if(m) { m.classList.remove("hidden"); m.classList.remove("opacity-0"); }
+  }
+  
+  hideLoginModal() {
+      const m = document.getElementById("loginModal");
+      if(m) { m.classList.add("opacity-0"); setTimeout(()=>m.classList.add("hidden"),300); }
+  }
+
+  handleLogin() {
+      const u = document.getElementById("loginUsername")?.value;
+      const p = document.getElementById("loginPassword")?.value;
+      const err = document.getElementById("loginError");
+      
+      if(!u || !p) {
+          if(err) { err.textContent = "Mohon isi username dan password."; err.classList.remove("hidden"); }
+          return;
+      }
+      
+      // Check against fetched users
+      if(!this.usersData) {
+           if(err) { err.textContent = "Sedang memuat data user... coba lagi sebentar."; err.classList.remove("hidden"); }
+           return;
+      }
+      
+      const user = this.usersData.find(x => x.username.toLowerCase() === u.toLowerCase() && x.password === p);
+      
+      if(user) {
+          this.currentUser = user;
+          this.hideLoginModal();
+          this.showNotification(`Selamat datang, ${user.username}!`, "success");
+          
+          // Auto-select user as recipient owner if specific ID logic existed, but for now just general login.
+      } else {
+          if(err) { err.textContent = "Username atau password salah."; err.classList.remove("hidden"); }
+      }
   }
 
   // --- GOOGLE DRIVE HELPER: SEARCH WITH API KEY (Public Access) ---
@@ -393,12 +460,31 @@ class LetterGenerator {
       }
   }
 
+  async copyToClipboard(text) {
+      if (!text) return false;
+      if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(text);
+          return true;
+      }
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      let ok = false;
+      try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+      textarea.remove();
+      return ok;
+  }
+
   closePreviewModal() {
       const modal = document.getElementById("previewModal");
       if(modal) modal.classList.add("hidden");
   }
 
-  handleSendToTask() {
+  async handleSendToTask() {
       if ((!this.generatedResults || this.generatedResults.length === 0) && !this.generatedFileUrl) {
           alert("Link file belum tersedia.");
           return;
@@ -407,6 +493,7 @@ class LetterGenerator {
       let message = "";
       let primaryUrl = "";
       let primaryName = "";
+      const recipient = this.recipientOptions.find(r => r.id === this.selectedRecipientId);
 
       if (this.generatedResults && this.generatedResults.length > 0) {
           message = "Surat telah dibuat. Link GDrive:\n";
@@ -424,16 +511,29 @@ class LetterGenerator {
           primaryName = this.generatedFilename;
       }
 
+      if (recipient) {
+          message += `\nPenerima: ${recipient.name}`;
+      }
+
+      let copied = false;
+      try {
+          copied = await this.copyToClipboard(primaryUrl);
+      } catch (e) {
+          console.warn("Clipboard copy failed:", e);
+      }
+
       window.parent.postMessage({
           type: "SEND_GENERATED_LETTER",
           payload: {
               filename: primaryName,
               fileUrl: primaryUrl, 
-              message: message
+              message: message,
+              recipient: recipient || null
           }
       }, "*");
-      
-      this.showNotification("Link terkirim!", "success");
+
+      if (copied) this.showNotification("Link disalin & dikirim!", "success");
+      else this.showNotification("Link dikirim (salin otomatis gagal).", "info");
       // Removed closeSuccessModal to allow user to continue actions
   }
 
@@ -460,6 +560,39 @@ class LetterGenerator {
             });
         }
     }
+  }
+
+  async fetchUsersFromSupabase() {
+    try {
+      const client = await this.getSupabaseClient(); if(!client) return false;
+      const { data } = await client.from("users").select("*").order("username");
+      if(data?.length) { 
+        this.usersData = data; 
+        this.recipientOptions = data.map(u => ({
+            id: u.email,
+            name: `${u.username} (${u.position} - ${u.team})`,
+            email: u.email
+        }));
+        return true; 
+      }
+    } catch(e) { console.warn("Supabase Users Error:", e); }
+    return false;
+  }
+
+  populateRecipients() {
+    const select = document.getElementById("recipientSelect");
+    if (!select) return;
+    const current = select.value || this.selectedRecipientId;
+    select.innerHTML = '<option value="">Pilih penerima (opsional)</option>';
+    
+    const opts = this.recipientOptions || [];
+    opts.forEach((r) => {
+        const o = document.createElement("option");
+        o.value = r.id;
+        o.textContent = r.name;
+        select.appendChild(o);
+    });
+    if (current) select.value = current;
   }
 
   populateFacilitators(opts={}) {
@@ -701,6 +834,7 @@ class LetterGenerator {
   hideSection(el) { if(el) { el.classList.remove("section-visible"); el.classList.add("section-hidden"); } }
   updateFacilitatorFields() { this.refreshUI(); } 
   handleFasilitatorChange(e, i) { const val=e.target.value; const div=document.getElementById(`instansiFasilitator${i}`); if(val&&this.facilitators){ const f=this.facilitators.find(x=>x.nama===val); if(div) div.textContent=f?`Instansi: ${f.perusahaan}`:""; } }
+  handleRecipientChange(e) { this.selectedRecipientId = e?.target?.value || ""; }
   async fetchBTSMaterials() {
     try {
         const client = await this.getSupabaseClient();
