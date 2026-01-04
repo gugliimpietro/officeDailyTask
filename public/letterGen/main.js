@@ -296,10 +296,13 @@ class LetterGenerator {
       }
       
       let varian = "";
-      if (formData.varianIndividu) varian = "individu";
-      else if (formData.varianPenugasan) varian = "penugasan";
-      else if (formData.varianKelompok) varian = "kelompok";
-      templatePath.push(varian);
+      // Internal letters do not use Varian in path
+      if (scopeType !== "internal") {
+          if (formData.varianIndividu) varian = "individu";
+          else if (formData.varianPenugasan) varian = "penugasan";
+          else if (formData.varianKelompok) varian = "kelompok";
+      }
+      if(varian) templatePath.push(varian);
 
       // 3. Find Template
       const blob = await this.findTemplateBlob(templatePath);
@@ -491,8 +494,13 @@ class LetterGenerator {
 
     const fs = document.getElementById("facilitatorSection");
     if(fs) {
-       // Only show if Jenis Surat is selected
-       if (js && js !== "") this.showSection(fs); else this.hideSection(fs);
+       // Only show if Jenis Surat is selected AND includes Eksternal (or both)
+       // If Internal Only -> Hide
+       const isInternal = document.getElementById("lingkupInternal")?.checked;
+       const isExternal = document.getElementById("lingkupEksternal")?.checked;
+       const internalOnly = isInternal && !isExternal;
+       
+       if (js && js !== "" && !internalOnly) this.showSection(fs); else this.hideSection(fs);
     }
 
     const curriculumSec = document.getElementById("curriculumSection");
