@@ -257,16 +257,38 @@ class LetterGenerator {
     
     this.isGenerating = true;
     this.showLoadingModal();
-    
+    this.generatedResults = [];
+
     try {
-      // 1. Collect Data (NO OAuth needed - templates are public)
       const formData = this.collectFormData();
+      const scopes = [];
+      if(formData.lingkupInternal) scopes.push("internal");
+      if(formData.lingkupEksternal) scopes.push("eksternal");
       
+      if(scopes.length === 0) scopes.push("internal"); // Default fallback
+
+      for(const scope of scopes) {
+          const res = await this.generateSingleLetter(formData, scope);
+          this.generatedResults.push(res);
+      }
+
+      this.showSuccessModal(); 
+
+    } catch(e) {
+      console.error(e);
+      this.showNotification("Gagal: " + (e.message||"Error"), "error");
+    } finally {
+      this.hideLoadingModal();
+      this.isGenerating = false;
+    }
+  }
+
+  async generateSingleLetter(formData, scopeType) {
       // 2. Build Path for Template
       const templatePath = [];
       templatePath.push(formData.sifatSurat);
       templatePath.push(formData.jenisSurat);
-      templatePath.push(formData.lingkupEksternal ? "eksternal" : "internal");
+      templatePath.push(scopeType); // internal or eksternal
       
       if (formData.jenisSurat === "Kurikulum Silabus") {
           if (formData.jenisKurikulum) templatePath.push(formData.jenisKurikulum);
@@ -279,17 +301,17 @@ class LetterGenerator {
       else if (formData.varianKelompok) varian = "kelompok";
       templatePath.push(varian);
 
-      // 3. Find & Download Template (Using API Key - no login required)
+      // 3. Find Template
       const blob = await this.findTemplateBlob(templatePath);
 
       // 4. Fill Template
       const payload = this.buildDocxPayload(formData);
+
       await this.ensureDocxLibsLoaded();
       const renderedBlob = this.renderDocx(await blob.arrayBuffer(), payload);
       
       const normalize = OneDrivePathHelper.normalize;
-      this.generatedBlob = renderedBlob;
-      this.generatedFilename = `surat_${normalize(formData.sifatSurat)}_${Date.now()}.docx`;
+      const filename = `surat_${normalize(formData.sifatSurat)}_${scopeType}_${Date.now()}.docx`;
 
       // 5. Build Output Path
       const username = this.currentUser.username || "user";
@@ -298,35 +320,52 @@ class LetterGenerator {
       if (formData.jenisKurikulum) outputPath.push(normalize(formData.jenisKurikulum));
       else if (formData.jenisSurat) outputPath.push(normalize(formData.jenisSurat));
       
-      this.lastOutputPath = outputPath;
+      this.lastOutputPath = outputPath; // Store last used for retry if needed
 
-      // 6. Upload to Drive (Zero-Login via Proxy)
-      this.generatedFileUrl = await this.uploadToGoogleDrive(renderedBlob, this.generatedFilename, outputPath);
-      this.showSuccessModal(); 
-
-    } catch(e) {
-      console.error(e);
-      this.showNotification("Gagal: " + (e.message||"Error"), "error");
-    } finally {
-      this.hideLoadingModal();
-      this.isGenerating = false;
-    }
+      // 6. Upload
+      const url = await this.uploadToGoogleDrive(renderedBlob, filename, outputPath);
+      
+      // Force Google Docs Editor Mode (replace /view with /edit) regarding user request
+      let editUrl = url;
+      if (url && url.includes("/view")) {
+          editUrl = url.replace("/view", "/edit");
+      }
+      
+      return { url: editUrl, filename, blob: renderedBlob };
   }
 
   // --- ACTIONS ---
   handleDownload() {
-      if (this.generatedBlob && this.generatedFilename) {
+      if (this.generatedResults && this.generatedResults.length > 0) {
+          this.generatedResults.forEach(res => {
+              if (res.blob && res.filename) window.saveAs(res.blob, res.filename);
+          });
+          this.showNotification("Semua file diunduh.", "success");
+      } else if (this.generatedBlob && this.generatedFilename) {
           window.saveAs(this.generatedBlob, this.generatedFilename);
           this.showNotification("File diunduh.", "success");
       }
-      this.closeSuccessModal();
+      // Removed closeSuccessModal to allow user to continue actions
   }
 
   handlePreview() {
+      // Support Multiple Files
+      if (this.generatedResults && this.generatedResults.length > 0) {
+          let opened = 0;
+          this.generatedResults.forEach(res => {
+              if (res.url) { 
+                  // Force Editor Mode
+                  let finalUrl = res.url; 
+                  window.open(finalUrl, "_blank"); 
+                  opened++; 
+              }
+          });
+          if (opened > 0) return;
+      }
+      
       if (this.generatedFileUrl) {
           window.open(this.generatedFileUrl, "_blank");
       } else if (this.generatedBlob) {
-          // Zero-Login: Directly upload via Proxy Service
           this.performUploadAndPreview();
       } else {
           alert("Link file belum tersedia.");
@@ -351,28 +390,48 @@ class LetterGenerator {
       }
   }
 
-  // Local preview removed as per request to use Drive View/Edit instead.
   closePreviewModal() {
       const modal = document.getElementById("previewModal");
       if(modal) modal.classList.add("hidden");
   }
 
   handleSendToTask() {
-      if (!this.generatedFileUrl) {
+      if ((!this.generatedResults || this.generatedResults.length === 0) && !this.generatedFileUrl) {
           alert("Link file belum tersedia.");
           return;
       }
+
+      let message = "";
+      let primaryUrl = "";
+      let primaryName = "";
+
+      if (this.generatedResults && this.generatedResults.length > 0) {
+          message = "Surat telah dibuat. Link GDrive:\n";
+          this.generatedResults.forEach(res => {
+              let label = "File";
+              if (res.filename.toLowerCase().includes("internal")) label = "Internal";
+              else if (res.filename.toLowerCase().includes("eksternal")) label = "Eksternal";
+              message += `- ${label}: ${res.url}\n`;
+              
+              if(!primaryUrl) { primaryUrl = res.url; primaryName = res.filename; }
+          });
+      } else {
+          message = `Surat telah dibuat. Link GDrive: ${this.generatedFileUrl}`;
+          primaryUrl = this.generatedFileUrl;
+          primaryName = this.generatedFilename;
+      }
+
       window.parent.postMessage({
           type: "SEND_GENERATED_LETTER",
           payload: {
-              filename: this.generatedFilename,
-              fileUrl: this.generatedFileUrl, 
-              message: `Surat telah dibuat. Link GDrive: ${this.generatedFileUrl}`
+              filename: primaryName,
+              fileUrl: primaryUrl, 
+              message: message
           }
       }, "*");
       
       this.showNotification("Link terkirim!", "success");
-      this.closeSuccessModal();
+      // Removed closeSuccessModal to allow user to continue actions
   }
 
   // --- HELPERS ---
@@ -564,6 +623,26 @@ class LetterGenerator {
       } catch (e) { hariTanggal = formData.tanggalPelaksanaan; }
     }
 
+    // BTS Dynamic Clause Construction
+    const btsItems = [];
+    const count = parseInt(formData.jumlahBTS) || 0;
+    for(let i=1; i<=count; i++) {
+        const m = formData[`btsMateri${i}`];
+        const p = formData[`btsPelatihan${i}`];
+        if(m && p) btsItems.push({ materi: m, pelatihan: p });
+    }
+
+    let btsClause = "";
+    if (btsItems.length === 1) {
+        btsClause = `topik ${btsItems[0].materi} yang berada pada pelatihan ${btsItems[0].pelatihan}`;
+    } else if (btsItems.length > 1) {
+        // "topik A (Pelatihan X), topik B (Pelatihan Y), dan topik C (Pelatihan Z)"
+        const parts = btsItems.map(x => `topik ${x.materi} (Pelatihan ${x.pelatihan})`);
+        const last = parts.pop();
+        btsClause = parts.length > 0 ? `${parts.join(', ')}, dan ${last}` : `${last}`; 
+        if(btsItems.length === 2) btsClause = `${parts[0]} dan ${last}`;
+    }
+
     return {
       bulan_angka: "01", 
       bulan_huruf: formData.bulanSurat,
@@ -575,18 +654,24 @@ class LetterGenerator {
       lampiran: safe(formData.lampiran),
       mitra_kerjasama: safe(formData.mitraKerjasama),
       topik_rapat: safe(formData.topikRapat),
-      // BTS
+      
+      // BTS Multi-Support
+      bts_clause: btsClause,
+      bts_list: btsItems,
+
+      // Legacy BTS (Single) - Kept for backward compatibility
       bts_pelatihan_1: safe(formData.btsPelatihan1),
       bts_materi_1: safe(formData.btsMateri1),
       bts_pelatihan_2: safe(formData.btsPelatihan2),
       bts_materi_2: safe(formData.btsMateri2),
       bts_pelatihan_3: safe(formData.btsPelatihan3),
       bts_materi_3: safe(formData.btsMateri3),
+      
       // Facilitator names
       fasilitator1: safe(formData.namaFasilitator1),
       fasilitator2: safe(formData.namaFasilitator2),
       fasilitator3: safe(formData.namaFasilitator3),
-      // Facilitator companies (both naming conventions)
+      // Facilitator companies
       instansi_fasilitator1: safe(formData.instansiFasilitator1),
       instansi_fasilitator2: safe(formData.instansiFasilitator2),
       instansi_fasilitator3: safe(formData.instansiFasilitator3),
@@ -610,7 +695,10 @@ class LetterGenerator {
   handleFasilitatorChange(e, i) { const val=e.target.value; const div=document.getElementById(`instansiFasilitator${i}`); if(val&&this.facilitators){ const f=this.facilitators.find(x=>x.nama===val); if(div) div.textContent=f?`Instansi: ${f.perusahaan}`:""; } }
   async fetchBTSMaterials() {
     try {
-        const { data, error } = await window.supabase.from('bts_materials').select('*');
+        const client = await this.getSupabaseClient();
+        if (!client) throw new Error("Supabase client not initialized");
+
+        const { data, error } = await client.from('bts_materials').select('*');
         if (error) throw error;
         
         // Group by Category
@@ -754,15 +842,50 @@ class LetterGenerator {
   
   showSuccessModal() { 
     const modal = document.getElementById("successModal");
-    if(modal) {
-        modal.classList.remove("hidden");
-        const card = document.getElementById("successModalCard"); 
-        if(card) {
-            requestAnimationFrame(() => {
-                card.classList.remove("opacity-0", "scale-90");
-                card.classList.add("opacity-100", "scale-100");
-            });
-        }
+    if(!modal) return;
+
+    // Dynamic List Logic
+    const listEl = document.getElementById("generatedFilesList");
+    const actionsEl = document.getElementById("generatedActionsDefault");
+    
+    if (listEl && actionsEl && this.generatedResults && this.generatedResults.length > 1) {
+        listEl.innerHTML = "";
+        listEl.classList.remove("hidden");
+        actionsEl.classList.remove("hidden"); // Keep default buttons visible!
+        
+        this.generatedResults.forEach(res => {
+            const div = document.createElement("div");
+            div.className = "flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-100";
+            
+            // Extract label
+            let label = res.filename;
+            if (label.toLowerCase().includes("internal")) label = "Surat Lingkup Internal";
+            else if (label.toLowerCase().includes("eksternal")) label = "Surat Lingkup Eksternal";
+            
+            div.innerHTML = `
+                <div class="flex items-center gap-2">
+                    <svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                    <span class="font-medium text-gray-700 truncate max-w-[150px]" title="${res.filename}">${label}</span>
+                </div>
+                <div class="flex gap-2">
+                   <button onclick="window.open('${res.url}', '_blank')" class="text-blue-600 hover:text-blue-800 text-xs font-bold px-2 py-1 bg-blue-50 rounded uppercase tracking-wide">View</button>
+                   <button onclick="window.__letterGenerator.downloadFileBlob('${res.blob ? '' : ''}')" class="text-gray-500 hidden">Down</button> 
+                </div>
+            `;
+            listEl.appendChild(div);
+        });
+    } else {
+        if(listEl) listEl.classList.add("hidden");
+        if(actionsEl) actionsEl.classList.remove("hidden");
+    }
+
+    modal.classList.remove("hidden");
+    const card = document.getElementById("successModalCard"); 
+    if(card) {
+        requestAnimationFrame(() => {
+            card.classList.remove("opacity-0", "scale-90");
+            card.classList.add("opacity-100", "scale-100");
+        });
     }
   }
   closeSuccessModal() {
