@@ -18,7 +18,7 @@ class LetterGenerator {
     // ⚠️ PASTE FOLDER ID OF 'templates_surat' HERE
     this.TEMPLATE_ROOT_ID = '1Ah7Hke5-O2oWa--8LlxhH3ZI7e29qGho'; 
     // ⚠️ PASTE GAS WEB APP URL HERE
-    this.GAS_UPLOAD_URL = 'https://script.google.com/macros/s/AKfycbzX8_yHVG9IgJy1hoJeY-n6YqNpixRVcfGKyB_KOl_eKGDdomP8PgdRrFGmPB2wAUduZg/exec';
+    this.GAS_UPLOAD_URL = 'https://script.google.com/macros/s/AKfycbyqMPDH3Ci3uQeS2iNWjyAfScwLKihHUOFUSOQ2Wvklyz4O3NrPfv8LU49w-B_kkFip/exec';
     
     this.tokenClient = null;
     this.accessToken = null;
@@ -75,7 +75,7 @@ class LetterGenerator {
   initializeUI() {
     if (document.getElementById("typewriter")) {
       new Typed("#typewriter", {
-        strings: ["Generator Surat Template", "Pembuat Dokumen Otomatis", "Surat Formal Profesional"],
+        strings: ["Aplikasi Pembuatan Surat Dinas", "isi form yang anda butuhkan"],
         typeSpeed: 60, backSpeed: 40, backDelay: 2000, loop: true, cursorChar: "|", autoInsertCss: true,
       });
     }
