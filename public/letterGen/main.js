@@ -15,6 +15,10 @@ class LetterGenerator {
     // ============================================================
     this.GOOGLE_CLIENT_ID = '15549700374-urha9ddap4kb61q6is6n95kq752p2g12.apps.googleusercontent.com'; 
     this.GOOGLE_API_KEY = 'AIzaSyD9XSsffQgsVc2oRJl0BFHYpyx4SkFwd8s'; // For public read access (no login)
+    // ⚠️ PASTE FOLDER ID OF 'templates_surat' HERE
+    this.TEMPLATE_ROOT_ID = '1Ah7Hke5-O2oWa--8LlxhH3ZI7e29qGho'; 
+    // ⚠️ PASTE GAS WEB APP URL HERE
+    this.GAS_UPLOAD_URL = 'https://script.google.com/macros/s/AKfycbzX8_yHVG9IgJy1hoJeY-n6YqNpixRVcfGKyB_KOl_eKGDdomP8PgdRrFGmPB2wAUduZg/exec';
     
     this.tokenClient = null;
     this.accessToken = null;
@@ -90,6 +94,7 @@ class LetterGenerator {
                 this.accessToken = tokenResponse.access_token;
                 console.log("Google Auth Success");
                 if (this.isGenerating) this.handleGenerate(true); 
+                if (this.pendingPreview) { this.handlePreview(); this.pendingPreview = false; }
               }
             },
           });
@@ -127,6 +132,7 @@ class LetterGenerator {
     addListener("modalDownloadBtn", "click", () => this.handleDownload());
     addListener("closeSuccessBtn", "click", () => this.closeSuccessModal());
     addListener("closeWarningBtn", "click", () => this.closeWarningModal());
+    addListener("closePreviewBtn", "click", () => this.closePreviewModal());
 
     document.querySelectorAll("input, select, textarea").forEach((input) => {
       input.addEventListener("change", () => this.saveFormState());
@@ -167,9 +173,11 @@ class LetterGenerator {
   async findTemplateBlob(folderPathArray) {
     console.log("[Generator] Searching Template Path:", folderPathArray.join('/'));
     
-    // Start at Root, look for 'templates_surat'
-    let currentId = await this.findFolderId("templates_surat");
-    if (!currentId) throw new Error("Folder 'templates_surat' tidak ditemukan di Root Google Drive.");
+    // Start from Configured Template Root Folder (Direct ID access avoids 403 on 'root' search)
+    let currentId = this.TEMPLATE_ROOT_ID;
+    if (!currentId || currentId.startsWith("1XX")) {
+        throw new Error("Harap konfigurasi ID Folder Template di main.js (baris ~17)");
+    }
 
     // Traverse subfolders
     for (const folderName of folderPathArray) {
@@ -199,32 +207,40 @@ class LetterGenerator {
   }
 
   // --- 2. UPLOAD RESULT (Dynamic Path) ---
+  // --- 2. UPLOAD RESULT TO APP OWNER'S DRIVE (Zero-Login via GAS) ---
   async uploadToGoogleDrive(blob, filename, pathArray) {
-    console.log("[Generator] Uploading to GDrive:", pathArray.join('/'));
+    if (!this.GAS_UPLOAD_URL) throw new Error("GAS Upload URL not configured!");
     
-    let currentId = await this.findOrCreateFolder('generated-letters', 'root');
+    console.log("[Generator] Uploading to GDrive via GAS:", pathArray.join('/'));
+    const base64 = await this.blobToBase64(blob);
+    
+    // Payload for Google Apps Script
+    const payload = {
+      filename: filename,
+      file: base64,
+      path: pathArray
+    };
 
-    for (const folderName of pathArray) {
-      if(folderName && folderName.trim() !== "") {
-         currentId = await this.findOrCreateFolder(folderName, currentId);
-      }
-    }
-
-    const metadata = { name: filename, parents: [currentId] };
-    const form = new FormData();
-    form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-    form.append('file', blob);
-
-    const uploadUrl = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink';
-    const res = await fetch(uploadUrl, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${this.accessToken}` },
-      body: form
+    // Post to GAS Web App (No OAuth token needed from user)
+    const res = await fetch(this.GAS_UPLOAD_URL, {
+      method: "POST",
+      body: JSON.stringify(payload)
     });
-
-    if (!res.ok) throw new Error("Gagal upload ke Google Drive.");
+    
     const data = await res.json();
-    return data.webViewLink;
+    if(data.status !== "success") throw new Error(data.message || "GAS Upload Failed");
+    
+    console.log("[Generator] Upload Success:", data.url);
+    return data.url;
+  }
+
+  blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(blob);
+        reader.onload = () => resolve(reader.result.split(',')[1]);
+        reader.onerror = error => reject(error);
+    });
   }
 
   // --- GENERATION HANDLER ---
@@ -274,17 +290,12 @@ class LetterGenerator {
       if (formData.sifatSurat) outputPath.push(normalize(formData.sifatSurat));
       if (formData.jenisKurikulum) outputPath.push(normalize(formData.jenisKurikulum));
       else if (formData.jenisSurat) outputPath.push(normalize(formData.jenisSurat));
+      
+      this.lastOutputPath = outputPath;
 
-      // 6. Upload to Drive (OAuth REQUIRED for write operations)
-      if (!this.accessToken) {
-          // If no token, show success modal but tell user they need to login to save to Drive
-          this.generatedFileUrl = null;
-          this.showSuccessModal();
-          this.showNotification("Surat berhasil dibuat! Login untuk menyimpan ke Drive.", "info");
-      } else {
-          this.generatedFileUrl = await this.uploadToGoogleDrive(renderedBlob, this.generatedFilename, outputPath);
-          this.showSuccessModal();
-      }
+      // 6. Upload to Drive (Zero-Login via Proxy)
+      this.generatedFileUrl = await this.uploadToGoogleDrive(renderedBlob, this.generatedFilename, outputPath);
+      this.showSuccessModal(); 
 
     } catch(e) {
       console.error(e);
@@ -307,9 +318,36 @@ class LetterGenerator {
   handlePreview() {
       if (this.generatedFileUrl) {
           window.open(this.generatedFileUrl, "_blank");
+      } else if (this.generatedBlob) {
+          // Zero-Login: Directly upload via Proxy Service
+          this.performUploadAndPreview();
       } else {
           alert("Link file belum tersedia.");
       }
+  }
+
+  async performUploadAndPreview() {
+      if (!this.generatedBlob || !this.lastOutputPath) return;
+      
+      this.showLoadingModal();
+      try {
+          console.log("[Preview] Uploading pending file to Drive...");
+          this.generatedFileUrl = await this.uploadToGoogleDrive(this.generatedBlob, this.generatedFilename, this.lastOutputPath);
+          
+          this.hideLoadingModal();
+          this.showNotification("File berhasil diupload!", "success");
+          window.open(this.generatedFileUrl, "_blank");
+      } catch(e) {
+          this.hideLoadingModal();
+          console.error(e);
+          this.showNotification("Gagal upload ke Drive: " + e.message, "error");
+      }
+  }
+
+  // Local preview removed as per request to use Drive View/Edit instead.
+  closePreviewModal() {
+      const modal = document.getElementById("previewModal");
+      if(modal) modal.classList.add("hidden");
   }
 
   handleSendToTask() {
@@ -543,7 +581,13 @@ class LetterGenerator {
   populateBTSPrograms() { [1,2,3].forEach(i=>{ const el=document.getElementById(`btsPelatihan${i}`); if(!el) return; if(typeof btsTrainingPrograms!=="undefined") Object.keys(btsTrainingPrograms).forEach(k=>{ const o=document.createElement("option"); o.value=k; o.textContent=k; el.appendChild(o); }); }); }
   fetchTemplateMetadata(folderKey) { return null; } 
   renderDocx(buf, data) { const zip = new window.PizZip(buf); const doc = new window.docxtemplater(zip, { paragraphLoop:true, linebreaks:true, delimiters:{start:"[", end:"]"} }); doc.render(data); return doc.getZip().generate({type:"blob", mimeType:"application/vnd.openxmlformats-officedocument.wordprocessingml.document"}); }
-  async ensureDocxLibsLoaded() { const load = (src) => new Promise(r => { if(document.querySelector(`script[src="${src}"]`)) return r(); const s=document.createElement("script"); s.src=src; s.onload=r; document.head.appendChild(s); }); await load("https://cdn.jsdelivr.net/npm/pizzip@3.1.7/dist/pizzip.min.js"); await load("https://cdn.jsdelivr.net/npm/docxtemplater@3.50.0/build/docxtemplater.js"); await load("https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"); }
+  async ensureDocxLibsLoaded() { 
+      const load = (src) => new Promise(r => { if(document.querySelector(`script[src="${src}"]`)) return r(); const s=document.createElement("script"); s.src=src; s.onload=r; document.head.appendChild(s); }); 
+      await load("https://cdn.jsdelivr.net/npm/pizzip@3.1.7/dist/pizzip.min.js"); 
+      await load("https://cdn.jsdelivr.net/npm/docxtemplater@3.50.0/build/docxtemplater.js"); 
+      await load("https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"); 
+      await load("https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js");
+  }
   validateField(field) { if(!field) return true; const val=field.value.trim(); const err=document.getElementById(`${field.id}Error`); if(err) err.classList.remove("show"); if(this.isFieldVisible(field.id) && this.getRequiredFields().includes(field.id) && !val) { this.showFieldError(field.id, "Wajib diisi"); return false; } return true; }
   
   validateForm() { 
