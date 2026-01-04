@@ -45,6 +45,17 @@ export class AuthService {
         const client = this.getSupabaseClient();
         if (!client) throw new Error("Koneksi Supabase gagal.");
 
+        // DEBUG: Check what is in the DB
+        console.log(`[AUTH] Checking user: ${username}`);
+        
+        const { data: debugData } = await client.from("users").select("username, password").ilike("username", username).maybeSingle();
+        if(debugData) {
+            console.log(`[AUTH] DB Pass: '${debugData.password}'`);
+            console.log(`[AUTH] Input Pass: '${password}'`);
+        } else {
+            console.log(`[AUTH] User not found.`);
+        }
+
         const { data, error } = await client
             .from("users")
             .select("*")

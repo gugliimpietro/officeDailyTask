@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAppState } from '../context/AppStateContext';
-import { Briefcase, ChevronLeft, Loader2, AlertCircle } from 'lucide-react'; // Removed Mail, Lock
+import { Briefcase, ChevronLeft, Loader2, AlertCircle, Eye, EyeOff } from 'lucide-react'; // Removed Mail, Lock
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -10,6 +10,7 @@ export default function LoginPage() {
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [mode, setMode] = useState('login'); 
   const [error, setError] = useState('');
   
@@ -64,14 +65,23 @@ export default function LoginPage() {
              </div>
              <div>
                <label className="block text-xs font-semibold text-slate-500 uppercase mb-1.5 ml-1">Password</label>
-               <input
-                 type="password"
-                 className="w-full px-4 py-3 border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none text-slate-800"
-                 placeholder="••••••"
-                 value={password}
-                 onChange={(e) => setPassword(e.target.value)}
-                 disabled={isLoading}
-               />
+               <div className="relative">
+                 <input
+                   type={showPassword ? "text" : "password"}
+                   className="w-full px-4 py-3 border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none text-slate-800"
+                   placeholder="••••••"
+                   value={password}
+                   onChange={(e) => setPassword(e.target.value)}
+                   disabled={isLoading}
+                 />
+                 <button
+                   type="button"
+                   onClick={() => setShowPassword(!showPassword)}
+                   className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                 >
+                   {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                 </button>
+               </div>
              </div>
              
              {error && (

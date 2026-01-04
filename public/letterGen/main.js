@@ -41,8 +41,23 @@ class LetterGeneratorApp {
             
             this.setupEventListeners();
             
-            // Show Login immediately
-            this.ui.showLoginModal();
+            // CHECK LOCAL STORAGE FROM PARENT APP
+            const existingUserStr = localStorage.getItem("odt_user");
+            if (existingUserStr) {
+                try {
+                    const existingUser = JSON.parse(existingUserStr);
+                    this.auth.currentUser = existingUser;
+                    this.ui.showNotification(`Sesi aktif: ${existingUser.username}`, "info");
+                    
+                    // Do NOT show login modal, just ensure data relies on this user
+                } catch (e) {
+                    // JSON parse error, fallback to login
+                    this.ui.showLoginModal();
+                }
+            } else {
+                // No session found, show login
+                this.ui.showLoginModal();
+            }
             
             // Initialize Auth
             this.auth.initGoogleAuth("https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.readonly", (token) => {

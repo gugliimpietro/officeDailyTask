@@ -33,24 +33,65 @@ export function AppStateProvider({ children }) {
   // ---- AUTH ACTIONS ----
   const login = useCallback(async (username, password) => {
     setIsLoading(true);
-    // Simulate API delay
-    await new Promise((r) => setTimeout(r, 800));
+    
+    try {
+        // 1. Validate against Supabase Database (Source of Truth for Credentials)
+        // Dynamic import to avoid issues if Supabase client not fully ready in some envs
+        const { supabase } = require("../supabaseClient"); 
+        
+        const { data: dbUser, error } = await supabase
+            .from("users")
+            .select("*")
+            .ilike("username", username)
+            .eq("password", password)
+            .maybeSingle();
 
-    // REAL BACKEND TODO:
-    // const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) {
+             console.error("Supabase Login Error:", error);
+             setIsLoading(false);
+             return { ok: false, message: "Terjadi kesalahan sistem saat login." };
+        }
 
-    const found = INITIAL_USERS.find(
-      (u) => u.username === username && u.password === password
-    );
+        if (!dbUser) {
+            setIsLoading(false);
+            return { ok: false, message: "Username atau password salah (Cek Database)." };
+        }
 
-    setIsLoading(false);
+        // 2. Map to App User Structure (Prefer Mock Data for Roles/Teams if available to preserve UI logic)
+        const mockProfile = INITIAL_USERS.find(u => u.username.toLowerCase() === username.toLowerCase());
+        
+        let finalUser;
+        if (mockProfile) {
+            finalUser = { ...mockProfile, ...dbUser }; // Merge (DB takes precedence for basics, Mock for IDs)
+            // Ensure ID from Mock is preserved if it links to Tasks
+            finalUser.id = mockProfile.id; 
+            finalUser.teamId = mockProfile.teamId; 
+            finalUser.role = mockProfile.role;
+        } else {
+            // New User (Not in Mock) -> Construct minimal profile
+            // Map Team 'PDEJP' -> 't1' (Hypothetical mapping)
+            const teamMap = { 'PDEJP': 't1' };
+            const roleMap = { 'team leader': 'TEAM_LEADER', 'team member': 'TEAM_MEMBER' };
+            
+            finalUser = {
+                id: dbUser.id.toString(),
+                username: dbUser.username,
+                name: dbUser.username, // or add name col
+                email: dbUser.email,
+                role: roleMap[dbUser.position?.toLowerCase()] || 'TEAM_MEMBER',
+                teamId: teamMap[dbUser.team] || 't1' // Default to t1 to see tasks
+            };
+        }
 
-    if (!found) {
-      return { ok: false, message: "Username atau password tidak ditemukan." };
+        setUser(finalUser);
+        setIsLoading(false);
+        return { ok: true };
+
+    } catch (e) {
+        console.error("Login Exception:", e);
+        setIsLoading(false);
+        return { ok: false, message: "Gagal login: " + e.message };
     }
-
-    setUser(found);
-    return { ok: true };
   }, []);
 
   const logout = useCallback(() => {
