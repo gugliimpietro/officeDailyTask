@@ -1,7 +1,7 @@
 // src/components/LetterGeneratorModal.js
 import React, { useEffect, useRef } from "react";
 
-export default function LetterGeneratorModal({ onClose }) {
+export default function LetterGeneratorModal({ user, onClose }) {
   const iframeRef = useRef(null);
 
   // Optional: close on ESC
@@ -20,8 +20,16 @@ export default function LetterGeneratorModal({ onClose }) {
       // Comment this out if you WANT auto-restore draft behavior from main.js
       // (main.js uses localStorage key "letterFormState"). :contentReference[oaicite:7]{index=7}
       // w?.localStorage?.removeItem("letterFormState");
-    } catch {
-      // ignore cross-origin issues (should not happen since it's same-origin public/)
+
+      // Sync User Session to Iframe
+      if (iframeRef.current && iframeRef.current.contentWindow) {
+         iframeRef.current.contentWindow.postMessage({
+             type: "SYNC_USER",
+             user: user
+         }, "*");
+      }
+    } catch (e) {
+      console.error("Frame sync error", e);
     }
   };
 

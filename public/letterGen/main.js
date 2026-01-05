@@ -38,34 +38,47 @@ class LetterGeneratorApp {
             this.ui.initializeAnimations();
             this.ui.populateSelect("waktuPelaksanaan", Data.timeSlots, "-- Pilih Waktu --");
             this.populateBTSPrograms();
-            
             this.setupEventListeners();
-            
-            // CHECK LOCAL STORAGE FROM PARENT APP
+
+            // LISTEN FOR PARENT SESSION (Robust Fix)
+            window.addEventListener("message", (event) => {
+                if (event.data && event.data.type === "SYNC_USER") {
+                     console.log("[LetterGen] Syncing user from parent:", event.data.user?.username);
+                     this.auth.currentUser = event.data.user;
+                     this.ui.hideLoginModal();
+                     this.ui.showNotification(`Sesi tersinkronisasi: ${event.data.user.username}`, "success");
+                     this.refreshUI();
+                     // Load protected data now that we have a user
+                     if(!this.usersData || this.usersData.length === 0) this.loadInitialData();
+                }
+            });
+
+            // CHECK LOCAL STORAGE FALLBACK
             const existingUserStr = localStorage.getItem("odt_user");
             if (existingUserStr) {
                 try {
                     const existingUser = JSON.parse(existingUserStr);
                     this.auth.currentUser = existingUser;
-                    this.ui.showNotification(`Sesi aktif: ${existingUser.username}`, "info");
-                    
-                    // Do NOT show login modal, just ensure data relies on this user
-                } catch (e) {
-                    // JSON parse error, fallback to login
-                    this.ui.showLoginModal();
-                }
-            } else {
-                // No session found, show login
-                this.ui.showLoginModal();
+                    // We don't hide modal here immediately if we wait for postMessage, 
+                    // BUT for speed let's trust it.
+                    console.log("[LetterGen] Found local session");
+                } catch (e) { }
             }
             
-            // Initialize Auth
+            // DECIDE LOGIN MODAL STATE
+            if (this.auth.currentUser) {
+                this.ui.hideLoginModal();
+                this.loadInitialData();
+            } else {
+                // Wait a short moment for PostMessage, otherwise show login
+                // Or just show it, and PostMessage will hide it rapidly.
+                this.ui.showLoginModal();
+            }
+
+            // Initialize Auth (Google)
             this.auth.initGoogleAuth("https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.readonly", (token) => {
                 console.log("Google Auth Success");
             });
-
-            // Load Data
-            await this.loadInitialData();
             
             // Initial UI Refresh
             this.ui.updateProgressBar();
@@ -389,3 +402,4 @@ class LetterGeneratorApp {
 
 // Initialize
 window.app = new LetterGeneratorApp();
+document.addEventListener("DOMContentLoaded", () => window.app.init());
