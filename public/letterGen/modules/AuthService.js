@@ -11,8 +11,18 @@ export class AuthService {
     // --- SUPABASE HELPERS ---
     getSupabaseClient() {
         if (this.supabase) return this.supabase;
-        if (window.supabase) {
-            this.supabase = window.supabase.createClient(this.supabaseUrl, this.supabaseKey);
+
+        // Access safely using bracket notation to avoid any lexical scope collision
+        const globalSupabase = window['supabase'];
+
+        if (globalSupabase) {
+            try {
+                this.supabase = globalSupabase.createClient(this.supabaseUrl, this.supabaseKey);
+            } catch (err) {
+                console.error("Failed to create Supabase client:", err);
+            }
+        } else {
+            console.error("Supabase library not found on window object.");
         }
         return this.supabase;
     }
@@ -47,9 +57,9 @@ export class AuthService {
 
         // DEBUG: Check what is in the DB
         console.log(`[AUTH] Checking user: ${username}`);
-        
+
         const { data: debugData } = await client.from("users").select("username, password").ilike("username", username).maybeSingle();
-        if(debugData) {
+        if (debugData) {
             console.log(`[AUTH] DB Pass: '${debugData.password}'`);
             console.log(`[AUTH] Input Pass: '${password}'`);
         } else {
@@ -65,7 +75,7 @@ export class AuthService {
 
         if (error) throw error;
         if (!data) throw new Error("Username atau password tidak sesuai data sistem.");
-        
+
         this.currentUser = data;
         return data;
     }
@@ -79,15 +89,15 @@ export class AuthService {
         // Check if user exists with this email OR phone
         // .or(`email.eq.${input},phone_number.eq.${input}`) can be tricky with ilike/contains logic.
         // Simple approach: fetch users who match either.
-        
+
         // Note: Supabase 'or' query syntax: .or('id.eq.20,id.eq.21')
         // We want: email ILIKE input OR phone_number ILIKE input
         // But ilike in OR string is tricky in JS client V2.
-        
+
         // Let's iterate: fetch single matching email? fetch single matching phone?
         // Actually, just fetching *all* users to check (like original) is inefficient but acceptable for small DB.
         // Better: let's query.
-        
+
         const { data, error } = await client
             .from("users")
             .select("email, phone_number")
@@ -95,7 +105,7 @@ export class AuthService {
             .limit(1);
 
         if (error) throw error;
-        
+
         if (data && data.length > 0) {
             // Found
             return true;
@@ -103,8 +113,8 @@ export class AuthService {
             // Not found
             // Fallback: check exact phone match if above query failed due to syntax
             const { data: phoneData } = await client.from("users").select("id").eq("phone_number", input).limit(1);
-            if(phoneData && phoneData.length > 0) return true;
-            
+            if (phoneData && phoneData.length > 0) return true;
+
             throw new Error("Data tidak ditemukan dalam sistem kami.");
         }
     }

@@ -1,29 +1,30 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useAppState } from '../context/AppStateContext'; 
-import { MessageSquare, Clock, CheckCircle, RotateCcw, Lock, RefreshCw, FileText, Paperclip, X, AlertCircle, XCircle, ArrowLeft } from 'lucide-react';
+import { useAppState } from '../context/AppStateContext';
+import { MessageSquare, Clock, CheckCircle, RotateCcw, Lock, RefreshCw, FileText, Paperclip, X, AlertCircle, XCircle, ArrowLeft, Send } from 'lucide-react';
 import { formatDateTime } from '../utils/helpers';
 import { INITIAL_USERS, TEAMS } from '../data/mockData';
 
 export default function TaskDetail() {
   const { taskId } = useParams(); // FIXED: Get ID from URL
   const navigate = useNavigate();
-  
+
   // FIXED: Get functions from context
-  const { 
-    user: currentUser, 
-    tasks, 
-    addComment, 
-    closeTask, 
-    requestReopen, 
-    reopenTask, 
-    acceptTask, 
-    rejectTask 
+  const {
+    user: currentUser,
+    tasks,
+    addComment,
+    closeTask,
+    requestReopen,
+    reopenTask,
+    acceptTask,
+    rejectTask,
+    sendMessage
   } = useAppState();
 
   // Find the specific task
-  const task = useMemo(() => 
-    tasks.find(t => String(t.id) === String(taskId)), 
+  const task = useMemo(() =>
+    tasks.find(t => String(t.id) === String(taskId)),
     [tasks, taskId]
   );
 
@@ -36,6 +37,14 @@ export default function TaskDetail() {
   const [reopenRequestNote, setReopenRequestNote] = useState('');
   const [showLeaderReopenModal, setShowLeaderReopenModal] = useState(false);
   const [leaderReopenNote, setLeaderReopenNote] = useState('');
+
+
+  // Send Message State
+  const [showSendMessageModal, setShowSendMessageModal] = useState(false);
+  const [msgRecipientId, setMsgRecipientId] = useState('');
+  const [msgTitle, setMsgTitle] = useState('');
+  const [msgBody, setMsgBody] = useState('');
+
   const fileInputRef = useRef(null);
 
   // --- Handlers ---
@@ -102,6 +111,21 @@ export default function TaskDetail() {
     setShowLeaderReopenModal(false);
   };
 
+  const handleSendMessageConfirm = () => {
+    if (!msgRecipientId || !msgTitle || !msgBody) return;
+
+    const recipient = INITIAL_USERS.find(u => String(u.id) === String(msgRecipientId));
+    if (!recipient) return;
+
+    sendMessage(recipient, task.id, msgTitle, msgBody);
+
+    // Reset & Close
+    setMsgRecipientId('');
+    setMsgTitle('');
+    setMsgBody('');
+    setShowSendMessageModal(false);
+  };
+
   const isLeaderOrAdmin = viewer.role === 'TEAM_LEADER' || viewer.role === 'ADMIN';
   const canClose = task.status === 'Running' && (isLeaderOrAdmin || viewer.id === task.assigneeId);
   const canRequestReopen =
@@ -139,45 +163,55 @@ export default function TaskDetail() {
             <h1 className="text-2xl font-bold text-slate-900 leading-tight">{task.title}</h1>
           </div>
           <div className="flex flex-col items-end gap-3 shrink-0">
-             <div className="text-right">
-                <p className="text-xs text-slate-400 uppercase tracking-wider mb-1">Status</p>
-                <div className="flex gap-2 items-center">
-                    {task.reopenRequested && <span className="bg-orange-100 text-orange-700 text-[10px] font-bold px-2 py-1 rounded animate-pulse">REOPEN REQUESTED</span>}
-                    <p className={`font-bold px-3 py-1 rounded-full text-sm inline-block ${task.status === 'Done' ? 'bg-green-100 text-green-700' : task.status === 'Running' ? 'bg-orange-100 text-orange-700' : task.status === 'Rejected' ? 'bg-red-800 text-white' : 'bg-slate-100 text-slate-700'}`}>{task.status}</p>
-                </div>
-                {task.completedAt && (
-                  <p className="text-xs text-slate-400 mt-2">
-                    Selesai: {formatDateTime(task.completedAt)}
-                  </p>
-                )}
-             </div>
-             <div className="flex flex-col gap-2 w-full">
-                {canClose && (
-                  <button
-                    onClick={() => setShowCloseConfirm(true)}
-                    className="flex items-center justify-center gap-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2 rounded-lg transition-colors shadow-sm w-full"
-                  >
-                    <CheckCircle className="w-4 h-4" /> Selesai
-                  </button>
-                )}
-                {canLeaderReopen && (
-                  <button
-                    onClick={() => setShowLeaderReopenModal(true)}
-                    className="flex items-center justify-center gap-1 bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold px-4 py-2 rounded-lg transition-colors shadow-sm w-full"
-                  >
-                    <RotateCcw className="w-4 h-4" />
-                    {task.reopenRequested ? 'Tindaklanjuti Reopen' : 'Buka Kembali'}
-                  </button>
-                )}
-             </div>
-             {task.reopenRequested && (
-               <div className="w-full rounded-lg border border-orange-200 bg-orange-50 p-3 text-xs text-orange-700">
-                 <p className="text-sm font-semibold text-orange-800">
-                   Permintaan buka kembali oleh {task.reopenRequestedByName || 'Anggota'}
-                 </p>
-                 {task.reopenReason && <p className="mt-1">{task.reopenReason}</p>}
-               </div>
-             )}
+            <div className="text-right">
+              <p className="text-xs text-slate-400 uppercase tracking-wider mb-1">Status</p>
+              <div className="flex gap-2 items-center">
+                {task.reopenRequested && <span className="bg-orange-100 text-orange-700 text-[10px] font-bold px-2 py-1 rounded animate-pulse">REOPEN REQUESTED</span>}
+                <p className={`font-bold px-3 py-1 rounded-full text-sm inline-block ${task.status === 'Done' ? 'bg-green-100 text-green-700' : task.status === 'Running' ? 'bg-orange-100 text-orange-700' : task.status === 'Rejected' ? 'bg-red-800 text-white' : 'bg-slate-100 text-slate-700'}`}>{task.status}</p>
+              </div>
+              {task.completedAt && (
+                <p className="text-xs text-slate-400 mt-2">
+                  Selesai: {formatDateTime(task.completedAt)}
+                </p>
+              )}
+            </div>
+            <div className="flex flex-col gap-2 w-full">
+              {canClose && (
+                <button
+                  onClick={() => setShowCloseConfirm(true)}
+                  className="flex items-center justify-center gap-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2 rounded-lg transition-colors shadow-sm w-full"
+                >
+                  <CheckCircle className="w-4 h-4" /> Selesai
+                </button>
+              )}
+              {canLeaderReopen && (
+                <button
+                  onClick={() => setShowLeaderReopenModal(true)}
+                  className="flex items-center justify-center gap-1 bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold px-4 py-2 rounded-lg transition-colors shadow-sm w-full"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  {task.reopenRequested ? 'Tindaklanjuti Reopen' : 'Buka Kembali'}
+                </button>
+              )}
+
+
+              {/* Send Message Button (Visible to everyone involved) */}
+              <button
+                onClick={() => setShowSendMessageModal(true)}
+                className="flex items-center justify-center gap-1 bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-blue-600 text-xs font-bold px-4 py-2 rounded-lg transition-colors shadow-sm w-full"
+              >
+                <Send className="w-4 h-4" />
+                Kirim Pesan / Peringatan
+              </button>
+            </div>
+            {task.reopenRequested && (
+              <div className="w-full rounded-lg border border-orange-200 bg-orange-50 p-3 text-xs text-orange-700">
+                <p className="text-sm font-semibold text-orange-800">
+                  Permintaan buka kembali oleh {task.reopenRequestedByName || 'Anggota'}
+                </p>
+                {task.reopenReason && <p className="mt-1">{task.reopenReason}</p>}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -236,80 +270,80 @@ export default function TaskDetail() {
                 );
               })}
             </div>
-            
+
             {isPendingAcceptance ? (
-               <div className="mt-8 p-6 bg-blue-50 rounded-xl border border-blue-200 text-center">
-                  <div className="flex flex-col items-center gap-3">
-                      <AlertCircle className="w-8 h-8 text-blue-500" />
-                      <div><p className="font-bold text-slate-800">Menunggu Konfirmasi Anda</p><p className="text-sm text-slate-500">Anda harus menerima atau menolak pekerjaan ini sebelum dapat memulai diskusi.</p></div>
-                      <div className="flex gap-3 mt-2">
-                        <button onClick={() => acceptTask(task.id)} className="flex items-center gap-1 bg-green-600 hover:bg-green-700 text-white text-sm font-bold px-4 py-2 rounded-lg transition-colors"><CheckCircle className="w-4 h-4" /> Terima</button>
-                        <button onClick={() => rejectTask(task.id)} className="flex items-center gap-1 bg-white border border-red-200 text-red-600 hover:bg-red-50 text-sm font-bold px-4 py-2 rounded-lg transition-colors"><XCircle className="w-4 h-4" /> Tolak</button>
-                      </div>
-                      <button
-                        onClick={handleBack}
-                        className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-blue-600"
-                      >
-                        <ArrowLeft className="w-4 h-4" />
-                        <span>Kembali ke Dashboard</span>
-                      </button>
+              <div className="mt-8 p-6 bg-blue-50 rounded-xl border border-blue-200 text-center">
+                <div className="flex flex-col items-center gap-3">
+                  <AlertCircle className="w-8 h-8 text-blue-500" />
+                  <div><p className="font-bold text-slate-800">Menunggu Konfirmasi Anda</p><p className="text-sm text-slate-500">Anda harus menerima atau menolak pekerjaan ini sebelum dapat memulai diskusi.</p></div>
+                  <div className="flex gap-3 mt-2">
+                    <button onClick={() => acceptTask(task.id)} className="flex items-center gap-1 bg-green-600 hover:bg-green-700 text-white text-sm font-bold px-4 py-2 rounded-lg transition-colors"><CheckCircle className="w-4 h-4" /> Terima</button>
+                    <button onClick={() => rejectTask(task.id)} className="flex items-center gap-1 bg-white border border-red-200 text-red-600 hover:bg-red-50 text-sm font-bold px-4 py-2 rounded-lg transition-colors"><XCircle className="w-4 h-4" /> Tolak</button>
                   </div>
-               </div>
-            ) : isTaskClosed ? (
-                <div className="mt-8 p-6 bg-gray-50 rounded-xl border border-gray-200 text-center">
-                    <div className="flex flex-col items-center gap-3 text-slate-500">
-                        <Lock className="w-6 h-6" />
-                        <p className="text-sm font-medium">Komentar dinonaktifkan karena tugas sudah selesai/ditolak.</p>
-                        {task.closeNote && (
-                          <p className="text-xs text-slate-400 max-w-md">Catatan penyelesaian: {task.closeNote}</p>
-                        )}
-                        {canRequestReopen && (
-                          <button
-                            onClick={() => setShowReopenRequestModal(true)}
-                            className="mt-2 flex items-center gap-2 bg-white border border-blue-200 text-blue-600 hover:bg-blue-50 px-4 py-2 rounded-lg font-bold text-sm transition-colors"
-                          >
-                            <RefreshCw className="w-4 h-4" /> Ajukan Pembukaan Pekerjaan
-                          </button>
-                        )}
-                        {task.reopenRequested && (
-                          <p className="text-xs text-orange-500 font-bold mt-2">
-                            Menunggu persetujuan pembukaan kembali dari Leader.
-                          </p>
-                        )}
-                    </div>
+                  <button
+                    onClick={handleBack}
+                    className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-blue-600"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                    <span>Kembali ke Dashboard</span>
+                  </button>
                 </div>
+              </div>
+            ) : isTaskClosed ? (
+              <div className="mt-8 p-6 bg-gray-50 rounded-xl border border-gray-200 text-center">
+                <div className="flex flex-col items-center gap-3 text-slate-500">
+                  <Lock className="w-6 h-6" />
+                  <p className="text-sm font-medium">Komentar dinonaktifkan karena tugas sudah selesai/ditolak.</p>
+                  {task.closeNote && (
+                    <p className="text-xs text-slate-400 max-w-md">Catatan penyelesaian: {task.closeNote}</p>
+                  )}
+                  {canRequestReopen && (
+                    <button
+                      onClick={() => setShowReopenRequestModal(true)}
+                      className="mt-2 flex items-center gap-2 bg-white border border-blue-200 text-blue-600 hover:bg-blue-50 px-4 py-2 rounded-lg font-bold text-sm transition-colors"
+                    >
+                      <RefreshCw className="w-4 h-4" /> Ajukan Pembukaan Pekerjaan
+                    </button>
+                  )}
+                  {task.reopenRequested && (
+                    <p className="text-xs text-orange-500 font-bold mt-2">
+                      Menunggu persetujuan pembukaan kembali dari Leader.
+                    </p>
+                  )}
+                </div>
+              </div>
             ) : (
-                <form onSubmit={handleSubmitComment} className="mt-6 flex gap-3">
+              <form onSubmit={handleSubmitComment} className="mt-6 flex gap-3">
                 <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0">{viewerInitial}</div>
                 <div className="flex-1">
-                    <textarea rows="3" className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="Write a comment update..." value={commentText} onChange={(e) => setCommentText(e.target.value)} />
-                    <div className="flex justify-between items-center mt-2">
-                        <div className="flex items-center gap-2">
-                            <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" id="file-upload" accept=".doc,.docx,.xls,.xlsx,.pdf,.jpeg,.jpg,.png"/>
-                            <label htmlFor="file-upload" className="flex items-center gap-1 text-xs text-slate-500 hover:text-blue-600 cursor-pointer p-1.5 rounded hover:bg-slate-100 transition-colors">
-                              <Paperclip className="w-4 h-4" />
-                              {attachmentData ? (
-                                <span className="text-blue-600 font-medium truncate max-w-[160px]">
-                                  {attachmentData.name}
-                                </span>
-                              ) : (
-                                'Lampirkan File / Gambar'
-                              )}
-                            </label>
-                            {attachmentData && (
-                              <button
-                                type="button"
-                                onClick={resetAttachment}
-                                className="text-xs text-red-400 hover:text-red-600"
-                              >
-                                <X className="w-3 h-3" />
-                              </button>
-                            )}
-                        </div>
-                        <button type="submit" className="bg-blue-600 text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-blue-700">Post Comment</button>
+                  <textarea rows="3" className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="Write a comment update..." value={commentText} onChange={(e) => setCommentText(e.target.value)} />
+                  <div className="flex justify-between items-center mt-2">
+                    <div className="flex items-center gap-2">
+                      <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" id="file-upload" accept=".doc,.docx,.xls,.xlsx,.pdf,.jpeg,.jpg,.png" />
+                      <label htmlFor="file-upload" className="flex items-center gap-1 text-xs text-slate-500 hover:text-blue-600 cursor-pointer p-1.5 rounded hover:bg-slate-100 transition-colors">
+                        <Paperclip className="w-4 h-4" />
+                        {attachmentData ? (
+                          <span className="text-blue-600 font-medium truncate max-w-[160px]">
+                            {attachmentData.name}
+                          </span>
+                        ) : (
+                          'Lampirkan File / Gambar'
+                        )}
+                      </label>
+                      {attachmentData && (
+                        <button
+                          type="button"
+                          onClick={resetAttachment}
+                          className="text-xs text-red-400 hover:text-red-600"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
                     </div>
+                    <button type="submit" className="bg-blue-600 text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-blue-700">Post Comment</button>
+                  </div>
                 </div>
-                </form>
+              </form>
             )}
           </div>
         </div>
@@ -342,105 +376,179 @@ export default function TaskDetail() {
         </div>
       </div>
       {/* Modals are the same... */}
-      {showCloseConfirm && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 space-y-4">
-            <h3 className="text-lg font-bold text-slate-900">Konfirmasi Pekerjaan Selesai</h3>
-            <p className="text-sm text-slate-500">
-              {isLeaderOrAdmin
-                ? 'Pastikan semua catatan telah diunggah. Isi catatan singkat jika diperlukan.'
-                : 'Apakah Anda yakin pekerjaan ini sudah selesai?'}
-            </p>
-            {isLeaderOrAdmin && (
+      {
+        showCloseConfirm && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 space-y-4">
+              <h3 className="text-lg font-bold text-slate-900">Konfirmasi Pekerjaan Selesai</h3>
+              <p className="text-sm text-slate-500">
+                {isLeaderOrAdmin
+                  ? 'Pastikan semua catatan telah diunggah. Isi catatan singkat jika diperlukan.'
+                  : 'Apakah Anda yakin pekerjaan ini sudah selesai?'}
+              </p>
+              {isLeaderOrAdmin && (
+                <textarea
+                  className="w-full border border-gray-200 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  rows={4}
+                  value={closeNote}
+                  onChange={(e) => setCloseNote(e.target.value)}
+                  placeholder="Catatan penyelesaian (opsional)"
+                />
+              )}
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => setShowCloseConfirm(false)}
+                  className="px-4 py-2 text-sm font-medium text-slate-500 hover:text-slate-700"
+                >
+                  Batal
+                </button>
+                <button
+                  onClick={handleCloseTaskConfirm}
+                  className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
+                >
+                  Tandai Selesai
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      }
+      {
+        showReopenRequestModal && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 space-y-4">
+              <h3 className="text-lg font-bold text-slate-900">Ajukan Pembukaan Pekerjaan</h3>
+              <p className="text-sm text-slate-500">
+                Jelaskan alasan mengapa pekerjaan ini perlu dibuka kembali.
+              </p>
               <textarea
                 className="w-full border border-gray-200 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
                 rows={4}
-                value={closeNote}
-                onChange={(e) => setCloseNote(e.target.value)}
-                placeholder="Catatan penyelesaian (opsional)"
+                value={reopenRequestNote}
+                onChange={(e) => setReopenRequestNote(e.target.value)}
+                placeholder="Contoh: Ada revisi tambahan dari leader..."
               />
-            )}
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => setShowCloseConfirm(false)}
-                className="px-4 py-2 text-sm font-medium text-slate-500 hover:text-slate-700"
-              >
-                Batal
-              </button>
-              <button
-                onClick={handleCloseTaskConfirm}
-                className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
-              >
-                Tandai Selesai
-              </button>
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => setShowReopenRequestModal(false)}
+                  className="px-4 py-2 text-sm font-medium text-slate-500 hover:text-slate-700"
+                >
+                  Batal
+                </button>
+                <button
+                  onClick={handleReopenRequestConfirm}
+                  disabled={!reopenRequestNote.trim()}
+                  className="px-4 py-2 text-sm font-semibold text-white bg-orange-500 hover:bg-orange-600 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Kirim Permintaan
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-      {showReopenRequestModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 space-y-4">
-            <h3 className="text-lg font-bold text-slate-900">Ajukan Pembukaan Pekerjaan</h3>
-            <p className="text-sm text-slate-500">
-              Jelaskan alasan mengapa pekerjaan ini perlu dibuka kembali.
-            </p>
-            <textarea
-              className="w-full border border-gray-200 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-              rows={4}
-              value={reopenRequestNote}
-              onChange={(e) => setReopenRequestNote(e.target.value)}
-              placeholder="Contoh: Ada revisi tambahan dari leader..."
-            />
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => setShowReopenRequestModal(false)}
-                className="px-4 py-2 text-sm font-medium text-slate-500 hover:text-slate-700"
-              >
-                Batal
-              </button>
-              <button
-                onClick={handleReopenRequestConfirm}
-                disabled={!reopenRequestNote.trim()}
-                className="px-4 py-2 text-sm font-semibold text-white bg-orange-500 hover:bg-orange-600 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Kirim Permintaan
-              </button>
+        )
+      }
+      {
+        showLeaderReopenModal && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 space-y-4">
+              <h3 className="text-lg font-bold text-slate-900">Konfirmasi Buka Kembali</h3>
+              <p className="text-sm text-slate-500">
+                Berikan catatan mengapa pekerjaan ini dibuka kembali untuk tim.
+              </p>
+              <textarea
+                className="w-full border border-gray-200 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                rows={4}
+                value={leaderReopenNote}
+                onChange={(e) => setLeaderReopenNote(e.target.value)}
+                placeholder="Contoh: Ada revisi yang harus diselesaikan..."
+              />
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => setShowLeaderReopenModal(false)}
+                  className="px-4 py-2 text-sm font-medium text-slate-500 hover:text-slate-700"
+                >
+                  Batal
+                </button>
+                <button
+                  onClick={handleLeaderReopenConfirm}
+                  disabled={!leaderReopenNote.trim()}
+                  className="px-4 py-2 text-sm font-semibold text-white bg-orange-500 hover:bg-orange-600 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Buka Kembali
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-      {showLeaderReopenModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 space-y-4">
-            <h3 className="text-lg font-bold text-slate-900">Konfirmasi Buka Kembali</h3>
-            <p className="text-sm text-slate-500">
-              Berikan catatan mengapa pekerjaan ini dibuka kembali untuk tim.
-            </p>
-            <textarea
-              className="w-full border border-gray-200 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-              rows={4}
-              value={leaderReopenNote}
-              onChange={(e) => setLeaderReopenNote(e.target.value)}
-              placeholder="Contoh: Ada revisi yang harus diselesaikan..."
-            />
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => setShowLeaderReopenModal(false)}
-                className="px-4 py-2 text-sm font-medium text-slate-500 hover:text-slate-700"
-              >
-                Batal
-              </button>
-              <button
-                onClick={handleLeaderReopenConfirm}
-                disabled={!leaderReopenNote.trim()}
-                className="px-4 py-2 text-sm font-semibold text-white bg-orange-500 hover:bg-orange-600 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Buka Kembali
-              </button>
+        )
+      }
+
+      {/* Send Message Modal */}
+      {
+        showSendMessageModal && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 space-y-4">
+              <div className="flex justify-between items-center">
+                <h3 className="text-lg font-bold text-slate-900">Kirim Pesan / Peringatan</h3>
+                <button onClick={() => setShowSendMessageModal(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Penerima</label>
+                  <select
+                    className="w-full border border-gray-200 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    value={msgRecipientId}
+                    onChange={(e) => setMsgRecipientId(e.target.value)}
+                  >
+                    <option value="">-- Pilih Penerima --</option>
+                    {INITIAL_USERS
+                      .filter(u => String(u.id) !== String(currentUser.id)) // Exclude self
+                      .map(u => (
+                        <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
+                      ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Judul Pesan</label>
+                  <input
+                    type="text"
+                    className="w-full border border-gray-200 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    placeholder="Contoh: Revisi Mendesak"
+                    value={msgTitle}
+                    onChange={(e) => setMsgTitle(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Isi Pesan</label>
+                  <textarea
+                    className="w-full border border-gray-200 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    rows={4}
+                    placeholder="Tulis pesan Anda..."
+                    value={msgBody}
+                    onChange={(e) => setMsgBody(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  onClick={() => setShowSendMessageModal(false)}
+                  className="px-4 py-2 text-sm font-medium text-slate-500 hover:text-slate-700"
+                >
+                  Batal
+                </button>
+                <button
+                  onClick={handleSendMessageConfirm}
+                  disabled={!msgRecipientId || !msgTitle || !msgBody}
+                  className="px-4 py-2 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  <Send className="w-3 h-3" /> Kirim
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        )
+      }
+    </div >
   );
 }

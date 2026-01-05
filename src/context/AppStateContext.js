@@ -7,7 +7,7 @@ import React, {
   useEffect,
 } from "react";
 import { INITIAL_TASKS, INITIAL_USERS } from "../data/mockData";
-// import { supabase } from "../supabaseClient"; // Uncomment when ready for real backend
+import { supabase } from "../supabaseClient";
 
 const AppStateContext = createContext(null);
 
@@ -24,8 +24,15 @@ export function AppStateProvider({ children }) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  // Messages/Warnings State
+  const [messages, setMessages] = useState(() => {
+    const saved = localStorage.getItem("odt_messages");
+    return saved ? JSON.parse(saved) : [];
+  });
+
   // Sync user to localStorage
   useEffect(() => {
+
     if (user) localStorage.setItem("odt_user", JSON.stringify(user));
     else localStorage.removeItem("odt_user");
   }, [user]);
@@ -33,64 +40,62 @@ export function AppStateProvider({ children }) {
   // ---- AUTH ACTIONS ----
   const login = useCallback(async (username, password) => {
     setIsLoading(true);
-    
+
     try {
-        // 1. Validate against Supabase Database (Source of Truth for Credentials)
-        // Dynamic import to avoid issues if Supabase client not fully ready in some envs
-        const { supabase } = require("../supabaseClient"); 
-        
-        const { data: dbUser, error } = await supabase
-            .from("users")
-            .select("*")
-            .ilike("username", username)
-            .eq("password", password)
-            .maybeSingle();
+      // 1. Validate against Supabase Database (Source of Truth for Credentials) 
 
-        if (error) {
-             console.error("Supabase Login Error:", error);
-             setIsLoading(false);
-             return { ok: false, message: "Terjadi kesalahan sistem saat login." };
-        }
+      const { data: dbUser, error } = await supabase
+        .from("users")
+        .select("*")
+        .ilike("username", username)
+        .eq("password", password)
+        .maybeSingle();
 
-        if (!dbUser) {
-            setIsLoading(false);
-            return { ok: false, message: "Username atau password salah (Cek Database)." };
-        }
-
-        // 2. Map to App User Structure (Prefer Mock Data for Roles/Teams if available to preserve UI logic)
-        const mockProfile = INITIAL_USERS.find(u => u.username.toLowerCase() === username.toLowerCase());
-        
-        let finalUser;
-        if (mockProfile) {
-            finalUser = { ...mockProfile, ...dbUser }; // Merge (DB takes precedence for basics, Mock for IDs)
-            // Ensure ID from Mock is preserved if it links to Tasks
-            finalUser.id = mockProfile.id; 
-            finalUser.teamId = mockProfile.teamId; 
-            finalUser.role = mockProfile.role;
-        } else {
-            // New User (Not in Mock) -> Construct minimal profile
-            // Map Team 'PDEJP' -> 't1' (Hypothetical mapping)
-            const teamMap = { 'PDEJP': 't1' };
-            const roleMap = { 'team leader': 'TEAM_LEADER', 'team member': 'TEAM_MEMBER' };
-            
-            finalUser = {
-                id: dbUser.id.toString(),
-                username: dbUser.username,
-                name: dbUser.username, // or add name col
-                email: dbUser.email,
-                role: roleMap[dbUser.position?.toLowerCase()] || 'TEAM_MEMBER',
-                teamId: teamMap[dbUser.team] || 't1' // Default to t1 to see tasks
-            };
-        }
-
-        setUser(finalUser);
+      if (error) {
+        console.error("Supabase Login Error:", error);
         setIsLoading(false);
-        return { ok: true };
+        return { ok: false, message: "Terjadi kesalahan sistem saat login." };
+      }
+
+      if (!dbUser) {
+        setIsLoading(false);
+        return { ok: false, message: "Username atau password salah (Cek Database)." };
+      }
+
+      // 2. Map to App User Structure (Prefer Mock Data for Roles/Teams if available to preserve UI logic)
+      const mockProfile = INITIAL_USERS.find(u => u.username.toLowerCase() === username.toLowerCase());
+
+      let finalUser;
+      if (mockProfile) {
+        finalUser = { ...mockProfile, ...dbUser }; // Merge (DB takes precedence for basics, Mock for IDs)
+        // Ensure ID from Mock is preserved if it links to Tasks
+        finalUser.id = mockProfile.id;
+        finalUser.teamId = mockProfile.teamId;
+        finalUser.role = mockProfile.role;
+      } else {
+        // New User (Not in Mock) -> Construct minimal profile
+        // Map Team 'PDEJP' -> 't1' (Hypothetical mapping)
+        const teamMap = { 'PDEJP': 't1' };
+        const roleMap = { 'team leader': 'TEAM_LEADER', 'team member': 'TEAM_MEMBER' };
+
+        finalUser = {
+          id: dbUser.id.toString(),
+          username: dbUser.username,
+          name: dbUser.username, // or add name col
+          email: dbUser.email,
+          role: roleMap[dbUser.position?.toLowerCase()] || 'TEAM_MEMBER',
+          teamId: teamMap[dbUser.team] || 't1' // Default to t1 to see tasks
+        };
+      }
+
+      setUser(finalUser);
+      setIsLoading(false);
+      return { ok: true };
 
     } catch (e) {
-        console.error("Login Exception:", e);
-        setIsLoading(false);
-        return { ok: false, message: "Gagal login: " + e.message };
+      console.error("Login Exception:", e);
+      setIsLoading(false);
+      return { ok: false, message: "Gagal login: " + e.message };
     }
   }, []);
 
@@ -209,6 +214,61 @@ export function AppStateProvider({ children }) {
     });
   }, []);
 
+  const sendMessage = useCallback((toUser, taskId, title, body) => {
+    if (!user) return;
+
+    // 1. Create Message/Warning
+    const newMessage = {
+      id: `msg-${Date.now()}`,
+      fromUserId: user.id,
+      fromUserName: user.name,
+      toUserId: toUser.id,
+      toUserName: toUser.name,
+      taskId: taskId,
+      title: title,
+      body: body,
+      createdAt: new Date().toISOString(),
+      isRead: false
+    };
+
+    setMessages(prev => [newMessage, ...prev]);
+
+    // 2. Add System Comment
+    // "sadiro send message warning to maya about "title message" "
+    const commentText = `${user.name} send message warning to ${toUser.name} about "${title}"`;
+
+    // We can reuse addComment logic but we need to call the setTask state updater directly 
+    // or call addComment if it wasn't dependent on a specific closure.
+    // addComment relies on "user" from scope, which is fine.
+    // However, addComment expects a payload object.
+
+    // Let's manually invoke the logic of addComment here to be safe or just call it if available.
+    // addComment is defined in scope.
+
+    // Replicating addComment logic to ensure the specific format is forced
+    setTasks((prev) =>
+      prev.map((t) => {
+        if (t.id !== taskId) return t;
+        const newComment = {
+          id: `c-${taskId}-${Date.now()}-sys`,
+          text: commentText,
+          attachment: null,
+          createdAt: new Date().toISOString(),
+          authorId: "SYSTEM", // or user.id? Request implies user action, but maybe distinct style?
+          authorName: user.name, // Keep it as the sender
+          role: user.role,
+          isSystem: true // Optional flag for styling
+        };
+        return { ...t, comments: [...(t.comments || []), newComment] };
+      })
+    );
+
+  }, [user]); // Depend on user for 'from' details
+
+  const markMessageRead = useCallback((msgId) => {
+    setMessages(prev => prev.map(m => m.id === msgId ? { ...m, isRead: true } : m));
+  }, []);
+
   const value = useMemo(
     () => ({
       user,
@@ -224,6 +284,9 @@ export function AppStateProvider({ children }) {
       closeTask,
       requestReopen,
       reopenTask,
+      messages,
+      sendMessage,
+      markMessageRead,
     }),
     [
       user,
@@ -238,9 +301,16 @@ export function AppStateProvider({ children }) {
       rejectTask,
       closeTask,
       requestReopen,
+      messages,
+      sendMessage,
       reopenTask,
     ]
   );
+
+  // Persist messages to localStorage
+  useEffect(() => {
+    localStorage.setItem("odt_messages", JSON.stringify(messages));
+  }, [messages]);
 
   return (
     <AppStateContext.Provider value={value}>

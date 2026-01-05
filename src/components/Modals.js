@@ -24,21 +24,21 @@ export function CreateTaskModal({ user, onClose, onSubmit, currentTaskCount }) {
     let days = 7;
     if (newPriority === 'Low') days = 14;
     if (newPriority === 'High') days = 3;
-    
+
     setFormData({
-        ...formData,
-        priority: newPriority,
-        dueDate: addWorkingDays(new Date(), days)
+      ...formData,
+      priority: newPriority,
+      dueDate: addWorkingDays(new Date(), days)
     });
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
     if (step === 1) {
-        setStep(2); // Go to confirmation
-        return;
+      setStep(2); // Go to confirmation
+      return;
     }
-    
+
     onSubmit({
       ...formData,
       // dueDate is already in formData from state
@@ -56,8 +56,8 @@ export function CreateTaskModal({ user, onClose, onSubmit, currentTaskCount }) {
   };
 
   const getAssigneeName = (id) => {
-      const member = teamMembers.find(m => m.id === id);
-      return member ? member.name : '-';
+    const member = teamMembers.find(m => m.id === id);
+    return member ? member.name : '-';
   };
 
   return (
@@ -67,7 +67,7 @@ export function CreateTaskModal({ user, onClose, onSubmit, currentTaskCount }) {
           <h3 className="font-bold text-slate-900">{showSuccess ? 'Pekerjaan Baru Dibuat' : step === 1 ? 'Buat Pekerjaan Baru' : 'Konfirmasi Pekerjaan'}</h3>
           <button onClick={handleModalClose} className="text-slate-400 hover:text-red-500">✕</button>
         </div>
-        
+
         {showSuccess ? (
           <div className="p-6 space-y-5 flex flex-col items-center text-center">
             <div className="w-16 h-16 rounded-full bg-green-100 text-green-600 flex items-center justify-center shadow-inner">
@@ -85,124 +85,124 @@ export function CreateTaskModal({ user, onClose, onSubmit, currentTaskCount }) {
             </button>
           </div>
         ) : step === 1 ? (
-            <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto">
+          <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto">
             <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Jenis Pekerjaan <span className="text-red-500">*</span></label>
-                <select 
+              <label className="block text-sm font-medium text-slate-700 mb-1">Jenis Pekerjaan <span className="text-red-500">*</span></label>
+              <select
                 required
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:border-blue-500 text-sm"
                 value={formData.jobType}
-                onChange={e => setFormData({...formData, jobType: e.target.value})}
-                >
+                onChange={e => setFormData({ ...formData, jobType: e.target.value })}
+              >
                 <option value="">-- Pilih Jenis Pekerjaan --</option>
                 {JOB_TYPES.map((type, index) => (
-                    <option key={index} value={type}>{type}</option>
+                  <option key={index} value={type}>{type}</option>
                 ))}
-                </select>
+              </select>
             </div>
 
             <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Nama Pekerjaan <span className="text-red-500">*</span></label>
-                <input 
+              <label className="block text-sm font-medium text-slate-700 mb-1">Nama Pekerjaan <span className="text-red-500">*</span></label>
+              <input
                 required
-                type="text" 
+                type="text"
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:border-blue-500"
                 value={formData.title}
-                onChange={e => setFormData({...formData, title: e.target.value})}
-                />
+                onChange={e => setFormData({ ...formData, title: e.target.value })}
+              />
             </div>
-            
+
             <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Deskripsi Pekerjaan</label>
-                <textarea 
+              <label className="block text-sm font-medium text-slate-700 mb-1">Deskripsi Pekerjaan</label>
+              <textarea
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:border-blue-500"
                 rows="3"
                 value={formData.description}
-                onChange={e => setFormData({...formData, description: e.target.value})}
-                />
+                onChange={e => setFormData({ ...formData, description: e.target.value })}
+              />
             </div>
 
             <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Penugasan Kepada <span className="text-red-500">*</span></label>
-                <select 
-                    required
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:border-blue-500"
-                    value={formData.assigneeId}
-                    onChange={e => setFormData({...formData, assigneeId: e.target.value})}
-                >
-                    <option value="">-- Pilih Staff --</option>
-                    {teamMembers.map(member => (
-                    <option key={member.id} value={member.id}>{member.name}</option>
-                    ))}
-                </select>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Penugasan Kepada <span className="text-red-500">*</span></label>
+              <select
+                required
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:border-blue-500"
+                value={formData.assigneeId}
+                onChange={e => setFormData({ ...formData, assigneeId: e.target.value })}
+              >
+                <option value="">-- Pilih Staff --</option>
+                {teamMembers.map(member => (
+                  <option key={member.id} value={member.id}>{member.name}</option>
+                ))}
+              </select>
             </div>
 
             <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Prioritas</label>
-                <select 
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:border-blue-500"
-                    value={formData.priority}
-                    onChange={handlePriorityChange}
-                >
-                    <option value="Low">Low</option>
-                    <option value="Normal">Normal</option>
-                    <option value="High">High</option>
-                </select>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Prioritas</label>
+              <select
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:border-blue-500"
+                value={formData.priority}
+                onChange={handlePriorityChange}
+              >
+                <option value="Low">Low</option>
+                <option value="Normal">Normal</option>
+                <option value="High">High</option>
+              </select>
             </div>
-            
+
             <div className="bg-blue-50 p-3 rounded text-xs text-blue-700 flex gap-2">
-                <Calendar className="w-4 h-4 shrink-0" />
-                <p>Tenggat waktu dihitung otomatis berdasarkan prioritas: {formData.priority} ({formData.priority === 'High' ? '+3' : formData.priority === 'Normal' ? '+7' : '+14'} hari kerja).</p>
+              <Calendar className="w-4 h-4 shrink-0" />
+              <p>Tenggat waktu dihitung otomatis berdasarkan prioritas: {formData.priority} ({formData.priority === 'High' ? '+3' : formData.priority === 'Normal' ? '+7' : '+14'} hari kerja).</p>
             </div>
 
             <div className="pt-4 flex justify-end gap-3 border-t border-gray-100">
-                <button type="button" onClick={onClose} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-medium">Cancel</button>
-                <button type="submit" className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">Review</button>
+              <button type="button" onClick={onClose} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-medium">Cancel</button>
+              <button type="submit" className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">Review</button>
             </div>
-            </form>
+          </form>
         ) : (
-            <div className="p-6 space-y-4">
-                <div className="bg-blue-50 p-4 rounded-lg space-y-3 border border-blue-100">
-                    <div className="flex justify-between items-start">
-                        <div>
-                            <p className="text-xs text-slate-500 uppercase tracking-wide">ID Pekerjaan (Estimasi)</p>
-                            <p className="font-mono font-bold text-slate-900">TASK-000{currentTaskCount + 1}</p>
-                        </div>
-                        <div className="text-right">
-                            <p className="text-xs text-slate-500 uppercase tracking-wide">Tenggat Waktu</p>
-                            <p className="font-bold text-slate-900 flex items-center gap-1 justify-end mt-1">
-                                <Calendar className="w-3 h-3" /> {formData.dueDate}
-                            </p>
-                        </div>
-                    </div>
-                    <div className="border-t border-blue-200 my-2"></div>
-                    <div>
-                        <p className="text-xs text-slate-500 uppercase tracking-wide">Nama Pekerjaan</p>
-                        <p className="font-bold text-slate-900">{formData.title}</p>
-                    </div>
-                    <div>
-                        <p className="text-xs text-slate-500 uppercase tracking-wide">Jenis Pekerjaan</p>
-                        <p className="text-sm text-slate-800">{formData.jobType}</p>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <p className="text-xs text-slate-500 uppercase tracking-wide">Prioritas</p>
-                            <span className="inline-block mt-1 px-2 py-0.5 rounded text-xs font-bold bg-slate-200 text-slate-700">{formData.priority}</span>
-                        </div>
-                        <div>
-                            <p className="text-xs text-slate-500 uppercase tracking-wide">PIC (Staff)</p>
-                            <p className="font-bold text-slate-900 flex items-center gap-1 mt-1">
-                                <User className="w-3 h-3" /> {getAssigneeName(formData.assigneeId)}
-                            </p>
-                        </div>
-                    </div>
+          <div className="p-6 space-y-4">
+            <div className="bg-blue-50 p-4 rounded-lg space-y-3 border border-blue-100">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="text-xs text-slate-500 uppercase tracking-wide">ID Pekerjaan (Estimasi)</p>
+                  <p className="font-mono font-bold text-slate-900">TASK-000{currentTaskCount + 1}</p>
                 </div>
-                <p className="text-sm text-slate-500 text-center">Pastikan data di atas sudah benar sebelum membuat pekerjaan ini.</p>
-                <div className="pt-2 flex justify-end gap-3 border-t border-gray-100">
-                    <button type="button" onClick={() => setStep(1)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-medium">Kembali</button>
-                    <button onClick={handleSubmit} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">Ya, Buat Pekerjaan</button>
+                <div className="text-right">
+                  <p className="text-xs text-slate-500 uppercase tracking-wide">Tenggat Waktu</p>
+                  <p className="font-bold text-slate-900 flex items-center gap-1 justify-end mt-1">
+                    <Calendar className="w-3 h-3" /> {formData.dueDate}
+                  </p>
                 </div>
+              </div>
+              <div className="border-t border-blue-200 my-2"></div>
+              <div>
+                <p className="text-xs text-slate-500 uppercase tracking-wide">Nama Pekerjaan</p>
+                <p className="font-bold text-slate-900">{formData.title}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 uppercase tracking-wide">Jenis Pekerjaan</p>
+                <p className="text-sm text-slate-800">{formData.jobType}</p>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs text-slate-500 uppercase tracking-wide">Prioritas</p>
+                  <span className="inline-block mt-1 px-2 py-0.5 rounded text-xs font-bold bg-slate-200 text-slate-700">{formData.priority}</span>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 uppercase tracking-wide">PIC (Staff)</p>
+                  <p className="font-bold text-slate-900 flex items-center gap-1 mt-1">
+                    <User className="w-3 h-3" /> {getAssigneeName(formData.assigneeId)}
+                  </p>
+                </div>
+              </div>
             </div>
+            <p className="text-sm text-slate-500 text-center">Pastikan data di atas sudah benar sebelum membuat pekerjaan ini.</p>
+            <div className="pt-2 flex justify-end gap-3 border-t border-gray-100">
+              <button type="button" onClick={() => setStep(1)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-medium">Kembali</button>
+              <button onClick={handleSubmit} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">Ya, Buat Pekerjaan</button>
+            </div>
+          </div>
         )}
       </div>
     </div>
@@ -223,11 +223,11 @@ export function RejectTaskModal({ taskId, onClose, onConfirm }) {
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden p-6">
         <h3 className="text-lg font-bold text-slate-900 mb-2">Konfirmasi Penolakan</h3>
         <p className="text-sm text-slate-500 mb-4">Apakah Anda yakin ingin menolak pekerjaan ini? Harap berikan alasan yang jelas.</p>
-        
+
         <form onSubmit={handleSubmit}>
           <div className="mb-4">
             <label className="block text-sm font-medium text-slate-700 mb-1">Alasan Penolakan</label>
-            <textarea 
+            <textarea
               required
               autoFocus
               className="w-full px-3 py-2 border border-red-200 rounded-lg focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500"
@@ -247,60 +247,146 @@ export function RejectTaskModal({ taskId, onClose, onConfirm }) {
   );
 }
 export function ReviewTaskModal({ taskId, onClose, onConfirm }) {
-    const [reason, setReason] = useState('');
-  
-    const handleSubmit = (e) => {
-      e.preventDefault();
-      if (!reason.trim()) return;
-      onConfirm(taskId, reason);
-      onClose();
-    };
-  
-    return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-        <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden p-6">
-          <h3 className="text-lg font-bold text-slate-900 mb-2">Konfirmasi Review Ulang</h3>
-          <p className="text-sm text-slate-500 mb-4">Anda akan membuka kembali pekerjaan ini. Harap berikan catatan untuk staff.</p>
-          
-          <form onSubmit={handleSubmit}>
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-slate-700 mb-1">Catatan Review</label>
-              <textarea 
-                required
-                autoFocus
-                className="w-full px-3 py-2 border border-orange-200 rounded-lg focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
-                rows="3"
-                placeholder="Contoh: Ada bagian yang kurang lengkap..."
-                value={reason}
-                onChange={e => setReason(e.target.value)}
-              />
-            </div>
-            <div className="flex justify-end gap-3">
-              <button type="button" onClick={onClose} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-medium text-sm">Batal</button>
-              <button type="submit" className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium text-sm">Kirim Review</button>
-            </div>
-          </form>
-        </div>
+  const [reason, setReason] = useState('');
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!reason.trim()) return;
+    onConfirm(taskId, reason);
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden p-6">
+        <h3 className="text-lg font-bold text-slate-900 mb-2">Konfirmasi Review Ulang</h3>
+        <p className="text-sm text-slate-500 mb-4">Anda akan membuka kembali pekerjaan ini. Harap berikan catatan untuk staff.</p>
+
+        <form onSubmit={handleSubmit}>
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-slate-700 mb-1">Catatan Review</label>
+            <textarea
+              required
+              autoFocus
+              className="w-full px-3 py-2 border border-orange-200 rounded-lg focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+              rows="3"
+              placeholder="Contoh: Ada bagian yang kurang lengkap..."
+              value={reason}
+              onChange={e => setReason(e.target.value)}
+            />
+          </div>
+          <div className="flex justify-end gap-3">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-medium text-sm">Batal</button>
+            <button type="submit" className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium text-sm">Kirim Review</button>
+          </div>
+        </form>
       </div>
-    );
+    </div>
+  );
 }
 
 // GENERIC CONFIRMATION MODAL
 export function ConfirmationModal({ title, message, confirmText, cancelText, onConfirm, onClose }) {
-    return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-        <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden p-6 text-center">
-            <div className="bg-blue-100 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4">
-                <CheckCircle className="w-6 h-6 text-blue-600" />
-            </div>
-            <h3 className="text-lg font-bold text-slate-900 mb-2">{title}</h3>
-            <p className="text-sm text-slate-500 mb-6">{message}</p>
-            
-            <div className="flex gap-3 justify-center">
-                <button onClick={onClose} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-medium text-sm">{cancelText}</button>
-                <button onClick={onConfirm} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-sm">{confirmText}</button>
-            </div>
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden p-6 text-center">
+        <div className="bg-blue-100 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4">
+          <CheckCircle className="w-6 h-6 text-blue-600" />
+        </div>
+        <h3 className="text-lg font-bold text-slate-900 mb-2">{title}</h3>
+        <p className="text-sm text-slate-500 mb-6">{message}</p>
+
+        <div className="flex gap-3 justify-center">
+          <button onClick={onClose} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-medium text-sm">{cancelText}</button>
+          <button onClick={onConfirm} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-sm">{confirmText}</button>
         </div>
       </div>
-    );
+    </div>
+  );
+}
+// WARNING / MESSAGE MODAL
+export function WarningModal({ message, onClose, onReply }) {
+  const [replyText, setReplyText] = useState('');
+  const [isReplying, setIsReplying] = useState(false);
+
+  if (!message) return null;
+
+  const handleReplySubmit = () => {
+    if (!replyText.trim()) return;
+    onReply(message, replyText);
+    setReplyText('');
+    setIsReplying(false);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
+        <div className="bg-red-50 px-6 py-4 border-b border-red-100 flex items-center gap-3">
+          <div className="bg-red-100 p-2 rounded-full">
+            <User className="w-5 h-5 text-red-600" />
+          </div>
+          <div>
+            <h3 className="font-bold text-slate-900">Peringatan / Pesan Baru</h3>
+            <p className="text-xs text-slate-500">Dari: {message.fromUserName}</p>
+          </div>
+        </div>
+
+        <div className="p-6">
+          <div className="bg-slate-50 border border-slate-100 rounded-lg p-4 mb-4">
+            <p className="font-bold text-slate-900 mb-1">{message.title}</p>
+            <p className="text-sm text-slate-700 whitespace-pre-line">{message.body}</p>
+            <p className="text-[10px] text-slate-400 mt-2 text-right">{new Date(message.createdAt).toLocaleString()}</p>
+          </div>
+
+          {isReplying ? (
+            <div className="space-y-3">
+              <textarea
+                className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                rows="3"
+                placeholder="Tulis balasan anda..."
+                value={replyText}
+                onChange={(e) => setReplyText(e.target.value)}
+                autoFocus
+              />
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => setIsReplying(false)}
+                  className="px-3 py-1.5 text-xs font-medium text-slate-500 hover:text-slate-700"
+                >
+                  Batal
+                </button>
+                <button
+                  onClick={handleReplySubmit}
+                  className="px-3 py-1.5 bg-blue-600 text-white text-xs font-bold rounded hover:bg-blue-700"
+                >
+                  Kirim Balasan
+                </button>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500 text-center italic">
+              Harap konfirmasi bahwa anda telah membaca pesan ini.
+            </p>
+          )}
+        </div>
+
+        {!isReplying && (
+          <div className="bg-gray-50 px-6 py-4 flex justify-between gap-3 border-t border-gray-100">
+            <button
+              onClick={() => setIsReplying(true)}
+              className="text-blue-600 hover:text-blue-800 text-sm font-semibold"
+            >
+              Balas Pesan
+            </button>
+            <button
+              onClick={onClose}
+              className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-lg font-bold text-sm shadow-sm transition-colors"
+            >
+              Mengerti (Tutup)
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }

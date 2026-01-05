@@ -31,16 +31,16 @@ function StatCard({ label, value, icon: Icon, color, bg }) {
 export default function Dashboard() {
   const navigate = useNavigate();
   const { user, tasks, addTask, acceptTask, rejectTask } = useAppState();
-  const { triggerToast } = useOutletContext() || { triggerToast: () => {} };
+  const { triggerToast } = useOutletContext() || { triggerToast: () => { } };
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [rejectModalTaskId, setRejectModalTaskId] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [filterType, setFilterType] = useState("all"); 
+  const [filterType, setFilterType] = useState("all");
 
   // --- Filtering Logic ---
   const filteredTasks = useMemo(() => {
-    if (!user) return []; 
+    if (!user) return [];
 
     let result = tasks;
 
@@ -92,7 +92,9 @@ export default function Dashboard() {
     triggerToast("Pekerjaan telah ditolak", "warning");
   };
 
-  if (!user) return null; 
+  if (!user) return null;
+
+
 
   return (
     <div className="space-y-8 pb-12">
@@ -103,7 +105,7 @@ export default function Dashboard() {
             Dasbor Pekerjaan
           </h1>
           <p className="text-slate-500 mt-2">
-            Halo, <span className="font-semibold text-blue-600">{user.name}</span>. 
+            Halo, <span className="font-semibold text-blue-600">{user.name}</span>.
             Anda memiliki {stats.active.length} pekerjaan aktif hari ini.
           </p>
         </div>
@@ -119,6 +121,8 @@ export default function Dashboard() {
         )}
       </div>
 
+
+
       {/* --- Search & Filter Bar --- */}
       <div className="bg-white p-2 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row gap-2">
         <div className="relative flex-1">
@@ -132,15 +136,15 @@ export default function Dashboard() {
           />
         </div>
         <div className="flex gap-2">
-          <button 
+          <button
             onClick={() => setFilterType("all")}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filterType === 'all' ? 'bg-slate-100 text-slate-900' : 'text-slate-500 hover:bg-slate-50'}`}
           >
             Semua
           </button>
-          <button 
-             onClick={() => setFilterType("urgent")}
-             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${filterType === 'urgent' ? 'bg-red-50 text-red-700' : 'text-slate-500 hover:bg-slate-50'}`}
+          <button
+            onClick={() => setFilterType("urgent")}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${filterType === 'urgent' ? 'bg-red-50 text-red-700' : 'text-slate-500 hover:bg-slate-50'}`}
           >
             <Filter className="w-3 h-3" /> Urgent
           </button>
@@ -158,7 +162,7 @@ export default function Dashboard() {
 
       {/* --- Main Content Grid --- */}
       <div className="grid lg:grid-cols-3 gap-8">
-        
+
         {/* Left Column: Actionable Tasks (New & Active) */}
         <div className="lg:col-span-2 space-y-6">
           {/* New Tasks Section */}
@@ -175,9 +179,9 @@ export default function Dashboard() {
                 <div className="p-8 text-center text-slate-400 text-sm">Tidak ada pekerjaan baru.</div>
               ) : (
                 stats.new.map(task => (
-                  <TaskItem 
-                    key={task.id} 
-                    task={task} 
+                  <TaskItem
+                    key={task.id}
+                    task={task}
                     user={user}
                     onTaskClick={() => handleTaskClick(task.id)}
                     onAcceptTask={acceptTask}
@@ -190,7 +194,7 @@ export default function Dashboard() {
 
           {/* Active Tasks Section */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-             <div className="px-6 py-4 border-b border-slate-100 bg-orange-50/50 flex justify-between items-center">
+            <div className="px-6 py-4 border-b border-slate-100 bg-orange-50/50 flex justify-between items-center">
               <h3 className="font-bold text-slate-800 text-sm uppercase tracking-wide flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-orange-500" />
                 Sedang Dikerjakan
@@ -202,12 +206,12 @@ export default function Dashboard() {
                 <div className="p-8 text-center text-slate-400 text-sm">Tidak ada pekerjaan aktif.</div>
               ) : (
                 stats.active.map(task => (
-                  <TaskItem 
-                    key={task.id} 
-                    task={task} 
+                  <TaskItem
+                    key={task.id}
+                    task={task}
                     user={user}
                     onTaskClick={() => handleTaskClick(task.id)}
-                    onAcceptTask={null} 
+                    onAcceptTask={null}
                     setRejectModalTaskId={null}
                   />
                 ))
@@ -218,17 +222,17 @@ export default function Dashboard() {
 
         {/* Right Column: Historical (Done/Rejected) */}
         <div className="space-y-6">
-           <div className="bg-slate-50 rounded-xl border border-slate-200 overflow-hidden">
-             <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center">
-               <h3 className="font-bold text-slate-700 text-sm uppercase">Riwayat Selesai</h3>
-             </div>
-             <div className="divide-y divide-slate-200/50">
-                {stats.completed.slice(0, 5).map(task => (
-                   <TaskItem key={task.id} task={task} user={user} onTaskClick={() => handleTaskClick(task.id)} compact />
-                ))}
-                {stats.completed.length === 0 && <div className="p-6 text-center text-xs text-slate-400">Belum ada data.</div>}
-             </div>
-           </div>
+          <div className="bg-slate-50 rounded-xl border border-slate-200 overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center">
+              <h3 className="font-bold text-slate-700 text-sm uppercase">Riwayat Selesai</h3>
+            </div>
+            <div className="divide-y divide-slate-200/50">
+              {stats.completed.slice(0, 5).map(task => (
+                <TaskItem key={task.id} task={task} user={user} onTaskClick={() => handleTaskClick(task.id)} compact />
+              ))}
+              {stats.completed.length === 0 && <div className="p-6 text-center text-xs text-slate-400">Belum ada data.</div>}
+            </div>
+          </div>
         </div>
       </div>
 
