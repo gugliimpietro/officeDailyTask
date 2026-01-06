@@ -23,10 +23,10 @@ export default function LetterGeneratorModal({ user, onClose }) {
 
       // Sync User Session to Iframe
       if (iframeRef.current && iframeRef.current.contentWindow) {
-         iframeRef.current.contentWindow.postMessage({
-             type: "SYNC_USER",
-             user: user
-         }, "*");
+        iframeRef.current.contentWindow.postMessage({
+          type: "SYNC_USER",
+          user: user
+        }, "*");
       }
     } catch (e) {
       console.error("Frame sync error", e);
@@ -46,8 +46,8 @@ export default function LetterGeneratorModal({ user, onClose }) {
         padding: 16,
       }}
       onClick={(e) => {
-        // click outside to close
-        if (e.target === e.currentTarget) onClose?.();
+        // click outside to close disabled by request
+        // if (e.target === e.currentTarget) onClose?.();
       }}
     >
       <div

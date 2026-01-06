@@ -29,7 +29,7 @@ export class UIService {
         if (!this.progressBar) return;
         const form = document.getElementById("letterForm");
         if (!form) return;
-        
+
         const inputs = form.querySelectorAll("input, select");
         let filled = 0;
         let total = 0;
@@ -50,10 +50,19 @@ export class UIService {
         const m = document.getElementById(id);
         if (m) {
             m.classList.remove("hidden");
+
+            // Check for inner card with ID {id}Card for specific animations
+            const card = document.getElementById(`${id}Card`);
+
             // Small delay to allow display:block to apply before opacity transition
             setTimeout(() => {
                 m.classList.remove("opacity-0");
-                m.classList.remove("scale-90"); // For some modals
+                m.classList.remove("scale-90"); // For modals that animate self
+
+                if (card) {
+                    card.classList.remove("opacity-0");
+                    card.classList.remove("scale-90");
+                }
             }, 10);
         }
     }
@@ -63,6 +72,13 @@ export class UIService {
         if (m) {
             m.classList.add("opacity-0");
             m.classList.add("scale-90");
+
+            const card = document.getElementById(`${id}Card`);
+            if (card) {
+                card.classList.add("opacity-0");
+                card.classList.add("scale-90");
+            }
+
             setTimeout(() => m.classList.add("hidden"), 300);
         }
     }
@@ -75,23 +91,23 @@ export class UIService {
         this.showModal("forgotPasswordModal");
         const msg = document.getElementById("forgotMessage");
         const input = document.getElementById("forgotInput");
-        if(msg) { msg.classList.add("hidden"); msg.textContent = ""; msg.className = "text-xs hidden p-2 rounded text-center"; }
-        if(input) input.value = "";
+        if (msg) { msg.classList.add("hidden"); msg.textContent = ""; msg.className = "text-xs hidden p-2 rounded text-center"; }
+        if (input) input.value = "";
     }
 
     hideForgotPasswordModal() { this.hideModal("forgotPasswordModal"); }
 
     showLoadingModal(msg = "Memproses...") {
         const m = document.getElementById("loadingModal");
-        if(m) {
+        if (m) {
             const p = m.querySelector("p");
-            if(p) p.textContent = msg;
+            if (p) p.textContent = msg;
             m.classList.remove("hidden");
         }
     }
     hideLoadingModal() {
         const m = document.getElementById("loadingModal");
-        if(m) m.classList.add("hidden");
+        if (m) m.classList.add("hidden");
     }
 
     showSuccessModal() { this.showModal("successModal"); }
@@ -122,13 +138,13 @@ export class UIService {
         // Looking at main.js previously, I didn't see a complex toast logic in the snippet.
         // Wait, looking at index.html... there isn't a toast container. 
         // I will stick to a simple alert OR inject a notification div.
-        
+
         // Let's inject a nice toast
         const div = document.createElement("div");
         div.className = `fixed bottom-4 right-4 px-6 py-3 rounded-xl shadow-lg text-white font-semibold z-[200] transform transition-all duration-500 translate-y-10 opacity-0 ${type === "error" ? "bg-red-600" : type === "success" ? "bg-green-600" : "bg-blue-600"}`;
         div.textContent = message;
         document.body.appendChild(div);
-        
+
         // Animate in
         requestAnimationFrame(() => {
             div.classList.remove("translate-y-10", "opacity-0");

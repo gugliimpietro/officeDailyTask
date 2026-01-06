@@ -31,7 +31,7 @@ export class AuthService {
         try {
             const client = this.getSupabaseClient();
             if (!client) return [];
-            const { data } = await client.from("facilitators").select("nama, perusahaan").order("nama");
+            const { data } = await client.from("facilitators").select("*").order("nama");
             return data || [];
         } catch (e) {
             console.warn("Supabase Error:", e);
